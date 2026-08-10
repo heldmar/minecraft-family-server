@@ -156,16 +156,17 @@ with the tuning below. These are requirements, not suggestions.
 
 | ID | Requirement |
 |---|---|
-| **N-1** | `minecraft.example.net` SHALL be **DNS-only (grey cloud)** — a CNAME to the No-IP hostname per N-9. Cloudflare's proxy does not carry Minecraft traffic on the free plan, so the orange cloud must be off. |
+| **N-1** | `minecraft.example.net` SHALL be a **DNS-only (grey cloud) A record** pointing at the home IP. Cloudflare's proxy does not carry Minecraft traffic on the free plan, so the orange cloud must be off. |
 | **N-2** | The record SHALL be an explicit record that **overrides the proxied `*.example.net` wildcard**. |
 | **N-3** | The hostname SHALL remain a **single subdomain level with a hyphen** (`minecraft-public`, not `minecraft.public`) — Cloudflare Universal SSL covers only one level. Complies with the standing cross-project convention. |
 | **N-4** | **UDP 19132** SHALL be forwarded on the router to `192.168.4.200` (Bedrock / Geyser). |
 | **N-5** | **TCP 25565** SHALL be forwarded on the router to `192.168.4.200` (Java Edition). Required by F-3. |
-| **N-6** | An **SRV record** `_minecraft._tcp.minecraft.example.net` SHALL point to port 25565, satisfying F-7. Its target SHOULD be the **No-IP hostname directly** rather than `minecraft.example.net`, since an SRV target pointing at a CNAME is discouraged by RFC 2782. |
-| **N-7** | **DDNS SHALL be reintroduced** to keep the hostname current against the dynamic home IP. |
-| **N-8** | DDNS SHALL be implemented with the **No-IP DUC client** running on the Pi, updating a No-IP hostname. *(Owner decision, 2026-08-10 — this knowingly reverses the "DUC removed, do not reintroduce" note in the earlier Pi design.)* |
-| **N-9** | `minecraft.example.net` SHALL therefore be a **DNS-only CNAME to the No-IP hostname**, superseding N-1's A-record form. The Cloudflare zone then needs no API token and no automated edits at all — the No-IP hostname absorbs every IP change. |
-| **N-9a** | ⚠️ If the No-IP hostname is on the **free tier it must be reconfirmed by email every 30 days** or it expires and the server silently goes offline. Either a calendar reminder SHALL be maintained, or the paid tier SHALL be used. See Q-8. |
+| **N-6** | An **SRV record** `_minecraft._tcp.minecraft.example.net` SHALL point to `minecraft.example.net` on port 25565, satisfying F-7. Because N-1 is a real A record and not a CNAME, this raises no RFC 2782 concern. |
+| **N-7** | **DDNS SHALL be reintroduced** to keep the A record current against the dynamic home IP. *(This knowingly reverses the "DDNS removed, do not reintroduce" note in the earlier Pi design — owner decision, 2026-08-10.)* |
+| **N-8** | DDNS SHALL be implemented as a **Cloudflare API updater** running on the Pi (e.g. `favonia/cloudflare-ddns`, arm64-native), updating the A record directly. **No third-party DDNS provider SHALL be used** — No-IP, DuckDNS and Dynu were all considered and rejected as needless dependencies given the zone is already on Cloudflare. |
+| **N-8a** | This has **no expiry and no reconfirmation step** — the failure mode that would have come with a free No-IP hostname (silent 30-day expiry) does not exist here. |
+| **N-9** | The updater SHALL authenticate with a **scoped API token limited to `Zone.DNS:Edit` on the `example.net` zone only**. It SHALL NOT use a Global API Key. |
+| **N-9a** | The updater SHALL modify **only** the `minecraft-public` record. It SHALL NOT touch the proxied `*.example.net` wildcard, the apex, or any tunnel-backed record used by the earlier Pi design. |
 | **N-10** | The Minecraft container SHALL be reachable by NPM (see N-11) but SHALL NOT be granted access to unrelated services on `npm-network` beyond what the streams require. |
 | **N-11** | Ingress SHALL be handled by **NPM Streams** — a UDP stream on 19132 and a TCP stream on 25565, each forwarding to the Minecraft container. *(Owner decision, 2026-08-10.)* This keeps all ingress visible and managed in one place, consistent with the rest of the homelab. |
 | **N-11a** | ⚠️ **Clarification, not an objection:** NPM Streams route by **port number only**. UDP carries no SNI and Minecraft carries no Host header, so the *hostname does not select the backend* — `minecraft.example.net` only resolves to the address, and ports 19132/25565 do the routing. This means **only one Minecraft server can occupy each port**; a second one later would need different ports and Bedrock clients would have to type `host:port`. |
@@ -215,7 +216,8 @@ compensating controls.
 | **S-3** | If RCON is enabled at all, it SHALL bind to localhost/LAN only and use a strong generated password stored outside this repo. |
 | **S-4** | The published home IP SHALL be understood as a **DDoS and scanning exposure**. A documented rollback SHALL exist: remove the DNS record and close the router forwards, restoring the v9 closed posture. |
 | **S-5** | The Minecraft container SHALL be isolated from the **host monitoring API** and from any container it does not need. Because ingress is via NPM streams (N-11) it shares `npm-network`; that sharing SHALL be the only coupling. |
-| **S-6** | No secrets (No-IP DUC credentials, RCON password) SHALL be committed to this repository. `.gitignore` SHALL enforce this and secrets SHALL be injected as environment variables. |
+| **S-6** | No secrets (Cloudflare API token, RCON password) SHALL be committed to this repository. `.gitignore` SHALL enforce this and secrets SHALL be injected as environment variables. |
+| **S-6a** | The Cloudflare token's blast radius SHALL be understood and bounded: scoped per N-9, it can edit DNS on `example.net` and nothing else. It SHALL be revocable independently of any other Cloudflare credential, including the tunnel's `CF_TUNNEL_API_TOKEN` used by the earlier Pi design. |
 | **S-7** | The repository SHALL be **private**. |
 | **S-8** | The server software (Paper, Geyser, Floodgate) SHALL be updated on a defined cadence; Geyser in particular tracks Bedrock client releases and **will break joins when Mojang ships a client update** — see O-2. |
 
@@ -259,7 +261,7 @@ compensating controls.
 | **Q-5** | Should there be scheduled "server open" hours (parental control), or is it always-on? | O-6 |
 | **Q-6** | Survival difficulty, PvP on/off, keep-inventory — the gameplay ruleset for a group of kids. | F-1 |
 | **Q-7** | Is an offsite copy of the world backup wanted, or is `/mnt/storage` sufficient? | O-4 |
-| **Q-8** | Is there an existing No-IP account, and is it free tier (30-day reconfirmation) or paid? | N-8, N-9a |
+| **Q-8** | *Resolved 2026-08-10 — No-IP dropped in favour of the Cloudflare API updater (N-8).* | — |
 
 ---
 
@@ -269,7 +271,7 @@ compensating controls.
 |---|---|---|
 | 2026-08-10 | Host on the Raspberry Pi; cloud VM rejected due to host-capacity risk during resize | Helder |
 | 2026-08-10 | Reintroduce DDNS, accepting home-IP publication | Helder |
-| 2026-08-10 | DDNS via **No-IP DUC** on the Pi, with `minecraft.example.net` as a grey-cloud CNAME to the No-IP hostname (Cloudflare API updater not used) | Helder |
+| 2026-08-10 | DDNS via a **Cloudflare API updater** on the Pi with a scoped `Zone.DNS:Edit` token, updating a direct A record. No-IP DUC was briefly chosen and then dropped — its free tier expires unless reconfirmed by email every 30 days, and any third-party DDNS provider is a needless dependency when the zone is already on Cloudflare. | Helder |
 | 2026-08-10 | Ingress via **NPM Streams** (UDP 19132, TCP 25565), keeping all ingress managed in NPM | Helder |
 | 2026-08-10 | Support Java + Bedrock crossplay in one world | Helder |
 | 2026-08-10 | Size for 8 concurrent players | Helder |

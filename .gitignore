@@ -7,6 +7,7 @@ secrets/
 *.pem
 rcon.password
 cloudflare-token*
+cf-ddns.env
 
 # World data and server runtime — lives on the Pi, not in Git
 world/
