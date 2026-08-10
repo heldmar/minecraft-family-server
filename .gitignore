@@ -1,0 +1,22 @@
+# Secrets — never commit (see S-6)
+.env
+*.env
+!.env.example
+secrets/
+*.key
+*.pem
+rcon.password
+cloudflare-token*
+
+# World data and server runtime — lives on the Pi, not in Git
+world/
+world_nether/
+world_the_end/
+backups/
+*.jar
+logs/
+crash-reports/
+cache/
+
+# macOS
+.DS_Store
