@@ -116,6 +116,11 @@ the home IP in DNS, and opening inbound ports — reversing three deliberate v9 
 | ID | Requirement |
 |---|---|
 | **F-1** | The server SHALL run Minecraft in survival mode with a persistent world that survives restarts, host reboots and container recreation. |
+| **F-1a** | **PvP SHALL be disabled** (`pvp=false`) — players cannot damage each other. *(Owner decision, 2026-08-10.)* |
+| **F-1b** | **`keepInventory` SHALL be true** — players keep their items on death. *(Owner decision, 2026-08-10.)* |
+| **F-1c** | Difficulty SHALL be **Normal** (the vanilla default). *Assumed from Q-6: "Easy" was offered and not selected. Confirm — see Q-9.* |
+| **F-1d** | ⚠️ The **Nether and the End SHALL be disabled**. *Assumed from Q-6: "Allow Nether and End" was offered and not selected. **This is a large gameplay restriction** — it removes nether portals, blaze/wither content and the ender dragon, i.e. most of vanilla's late game. Please confirm this was intended — see Q-9.* |
+| **F-1e** | The server SHALL pin to the **latest Minecraft version fully supported by Geyser** at build time. Bedrock clients are force-updated by Mojang and cannot stay on an older version, so trailing the client breaks joins. *(Owner decision, 2026-08-10 — resolves Q-1.)* |
 | **F-2** | Bedrock Edition clients (PS5, iPad, PC Bedrock) SHALL be able to join. |
 | **F-3** | Java Edition clients SHALL be able to join **the same world** as Bedrock clients. |
 | **F-4** | Bedrock players SHALL NOT be required to own a Java Edition account (Floodgate). |
@@ -159,6 +164,8 @@ with the tuning below. These are requirements, not suggestions.
 | **N-1** | `minecraft.example.net` SHALL be a **DNS-only (grey cloud) A record** pointing at the home IP. Cloudflare's proxy does not carry Minecraft traffic on the free plan, so the orange cloud must be off. |
 | **N-2** | The record SHALL be an explicit record that **overrides the proxied `*.example.net` wildcard**. |
 | **N-3** | The hostname SHALL remain a **single subdomain level with a hyphen** (`minecraft-public`, not `minecraft.public`) — Cloudflare Universal SSL covers only one level. Complies with the standing cross-project convention. |
+| **N-3a** | ⚠️ **The Pi holds `192.168.4.200` by DHCP, not static configuration** (`ipv4.method: auto`, address flagged `dynamic`, verified 2026-08-10). All port forwards below depend on that address never changing. A **static DHCP reservation SHALL be confirmed or created on the router** before any forward is relied upon. |
+| **N-3b** | ⚠️ **The Pi is connected over Wi-Fi (`wlan0`), not Ethernet** (verified 2026-08-10). Wi-Fi adds latency and jitter, which players feel directly as rubber-banding in a real-time game, and it is the least reliable link in the chain. **A wired Ethernet connection SHOULD be used.** See Q-10. |
 | **N-4** | **UDP 19132** SHALL be forwarded on the router to `192.168.4.200` (Bedrock / Geyser). |
 | **N-5** | **TCP 25565** SHALL be forwarded on the router to `192.168.4.200` (Java Edition). Required by F-3. |
 | **N-6** | An **SRV record** `_minecraft._tcp.minecraft.example.net` SHALL point to `minecraft.example.net` on port 25565, satisfying F-7. Because N-1 is a real A record and not a CNAME, this raises no RFC 2782 concern. |
@@ -180,10 +187,15 @@ restriction with no server-side fix.
 
 | ID | Requirement |
 |---|---|
-| **N-13** | A **BedrockConnect** instance SHALL be self-hosted on the Pi, so that approved players point their console DNS at the server's own resolver rather than a public third-party one. |
+| **N-13** | A **BedrockConnect** instance SHALL be self-hosted on the Pi, so approved players point their console DNS at the server's own resolver rather than a public third-party one. *(Owner decision, 2026-08-10 — resolves Q-4.)* |
 | **N-14** | The self-hosted BedrockConnect server list SHALL contain **only** this server. |
-| **N-15** | The BedrockConnect DNS service SHALL be reachable by approved players (requires UDP/TCP 53 exposure — **see O-3, this needs a safe design before implementation**). |
-| **N-16** | A **player-facing setup guide** SHALL be written for PS5, iPad and PC, in plain language suitable for a child or a friend's parent to follow. |
+| **N-15** | UDP/TCP **53** SHALL be forwarded on the router to the Pi. Port 53 is currently unused on the Pi (verified 2026-08-10 — nothing listening). |
+| **N-15a** | ⚠️ **Before anything is built, inbound port 53 SHALL be tested from outside the network.** Many residential ISPs block it. If blocked, N-13 is impossible as designed and the decision must be revisited. **This is the first implementation task.** |
+| **N-16** | The DNS service SHALL apply **per-source-IP rate limiting** (nftables `hashlimit` or equivalent) so it cannot be used as a traffic amplifier even if discovered by scanners. |
+| **N-17** | The DNS service SHALL have **recursion disabled** and SHALL answer only BedrockConnect's fixed hostname set, refusing everything else. It SHALL NOT be a general-purpose resolver. |
+| **N-18** | Amplification factor SHALL be **verified as ≈1×** (response size ≈ query size) before port 53 is opened. This is the property that makes N-13 acceptably safe; it SHALL be confirmed, not assumed. |
+| **N-19** | A documented rollback SHALL exist for port 53 specifically: close the router forward and the server stops being reachable for PS5 players, without affecting Java or iPad clients. |
+| **N-20** | A **player-facing setup guide** SHALL be written for PS5, iPad and PC, in plain language suitable for a child or a friend's parent to follow. |
 
 ---
 
@@ -232,7 +244,8 @@ compensating controls.
 | **O-3** | Container images SHALL be **pinned to specific tags** (not `latest`) and SHALL have a real `arm64`/`aarch64` manifest. |
 | **O-4** | World backups SHALL run **daily** to `/mnt/storage`, with retention of at least 14 dailies and 4 weeklies. |
 | **O-5** | A backup restore SHALL be **tested at least once** before the server is opened to friends. An untested backup is not a backup. |
-| **O-6** | The stack SHALL restart automatically on host reboot (`restart: unless-stopped`). |
+| **O-6** | The server SHALL be **always-on**, restarting automatically on host reboot (`restart: unless-stopped`). *(Owner decision, 2026-08-10 — resolves Q-5.)* |
+| **O-6a** | A **scheduled nightly restart** SHALL run in the early hours to clear JVM memory pressure and heap fragmentation — genuinely valuable on a 4 GB Pi (see P-1, P-3). It SHALL warn any players online before restarting, and SHALL force a world save first. |
 | **O-7** | Server health SHOULD be visible in the existing **monitoring** dashboard, or via a documented check. |
 | **O-8** | Player-facing setup guides (N-16) SHALL live in this repo under `docs/`. |
 | **O-9** | Disk growth SHALL be monitored; the world border (P-5) is the primary control. |
@@ -254,14 +267,16 @@ compensating controls.
 
 | # | Question | Blocks |
 |---|---|---|
-| **Q-1** | Which Minecraft version to target? Geyser support lags the newest Bedrock release; pinning matters. | Implementation |
+| **Q-1** | *Resolved 2026-08-10 — pin to the latest Geyser-supported version (F-1e).* | — |
 | **Q-2** | What are the actual gamertags/usernames for the initial allowlist? | A-5 |
-| **Q-3** | Does the router support the required port forwards without UPnP, and is a static DHCP reservation already in place for `192.168.4.200`? | N-4, N-5 |
-| **Q-4** | BedrockConnect requires exposing DNS (port 53). What is the safe design — restricted to known player IPs, or an alternative? **This is the least-resolved requirement.** | N-15 |
-| **Q-5** | Should there be scheduled "server open" hours (parental control), or is it always-on? | O-6 |
-| **Q-6** | Survival difficulty, PvP on/off, keep-inventory — the gameplay ruleset for a group of kids. | F-1 |
+| **Q-3** | Does the router support the required port forwards without UPnP, and is a static DHCP reservation in place for `192.168.4.200`? **Partially answered: the Pi is on DHCP, so a reservation is required — see N-3a.** | N-4, N-5, N-15 |
+| **Q-4** | *Resolved 2026-08-10 — self-host BedrockConnect on the Pi with rate limiting (N-13 to N-19).* | — |
+| **Q-5** | *Resolved 2026-08-10 — always-on with a nightly restart (O-6, O-6a).* | — |
+| **Q-6** | *Resolved 2026-08-10 — PvP off, keepInventory on (F-1a, F-1b). Difficulty and Nether/End inferred, see Q-9.* | — |
 | **Q-7** | Is an offsite copy of the world backup wanted, or is `/mnt/storage` sufficient? | O-4 |
 | **Q-8** | *Resolved 2026-08-10 — No-IP dropped in favour of the Cloudflare API updater (N-8).* | — |
+| **Q-9** | ⚠️ **Confirm two gameplay settings inferred from omission**, not from an explicit choice: difficulty **Normal** (F-1c), and the **Nether and End disabled** (F-1d). The second in particular removes most of vanilla's late game — please confirm it was intended. | F-1c, F-1d |
+| **Q-10** | The Pi is on **Wi-Fi**. Can it be moved to wired Ethernet? Players feel Wi-Fi jitter directly as rubber-banding. | N-3b |
 
 ---
 
@@ -277,4 +292,8 @@ compensating controls.
 | 2026-08-10 | Size for 8 concurrent players | Helder |
 | 2026-08-10 | Private GitHub repository | Helder |
 | 2026-08-10 | Paper + Geyser + Floodgate (forced: no ARM64 Bedrock Dedicated Server exists) | Analysis |
+| 2026-08-10 | Self-host BedrockConnect on the Pi with per-source rate limiting, rather than using the public service | Helder |
+| 2026-08-10 | Pin to the latest Geyser-supported Minecraft version | Helder |
+| 2026-08-10 | PvP off, keepInventory on | Helder |
+| 2026-08-10 | Always-on, with a scheduled nightly restart | Helder |
 | 2026-08-10 | Correction recorded: recorded free-tier allowance is 2 vCPU / 12 GB, not 4 / 24 (recorded in an internal note) | Analysis |
