@@ -1,31 +1,40 @@
 # MarNar Minecraft
 
-Private, invitation-only Minecraft server for MarNar and his friends, hosted on the MarNar Pi
-homelab and reachable at `minecraft.example.net`.
+Private, invitation-only Minecraft server for MarNar and his friends, hosted on a small cloud
+box and reachable at `minecraft.example.net`.
 
 **Free to play, closed to the public.** No payments are collected; access is by explicit
 allowlist only.
 
 ## Status
 
-📋 **Requirements drafted — implementation not started.**
+📋 **Requirements drafted (v2) — implementation not started.**
 
 Start here: **[`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md)**
 
 ## Shape of the thing
 
-- **Host:** Raspberry Pi 4B (`192.168.4.200`), world on the USB disk at `/mnt/storage`
+- **Host:** a small ARM cloud VM — static public IP `198.51.100.20`, 1 vCPU / 6 GB
 - **Server:** PaperMC (Java Edition) + GeyserMC + Floodgate, in Docker
-- **Why not the official Bedrock server:** it is x86_64-only; the Pi is `aarch64`
+- **Why not the official Bedrock server:** it is x86_64-only; the host is `aarch64`
 - **Players:** PS5, iPad and PC Bedrock via Geyser; PC Java Edition natively — one shared world
-- **Target:** 8 concurrent players
+- **Target:** 4 concurrent players (cut from 8 to fit a shared single vCPU)
+- **PS5:** requires self-hosted BedrockConnect on port 53 — PS5 cannot type a server address
+
+## Why not the Pi
+
+The Pi was the original choice and the plan was fully written against it. It was abandoned on
+2026-08-10 because **nothing inbound from the internet reaches it**. CGNAT, double NAT, ISP port
+blocking and host firewalling were each ruled out by measurement; the router appears not to apply
+port-forwarding rules it displays as Enabled, and it has no local admin interface to debug.
+Full diagnostic table in [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) §4.2.
 
 ## Related projects on this machine
 
 | Project | Relationship |
 |---|---|
-| A Raspberry Pi homelab | The original host. This project is a **tenant**; the dependency is one-directional. |
-| A cloud VM | Evaluated as a host and **rejected** at the time. |
+| The host | This project is a **tenant** — it follows the host's stack, pinning and SELinux rules. |
+| A Raspberry Pi homelab | Evaluated as host and **rejected**; no longer involved. |
 
 ## Repository layout
 

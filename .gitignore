@@ -9,7 +9,7 @@ rcon.password
 cloudflare-token*
 cf-ddns.env
 
-# World data and server runtime — lives on the Pi, not in Git
+# World data and server runtime — lives on the server, not in Git
 world/
 world_nether/
 world_the_end/

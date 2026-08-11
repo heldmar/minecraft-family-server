@@ -1,21 +1,21 @@
 # MarNar Minecraft — Requirements
 
-> **Status:** Draft v1 — approved decisions recorded, implementation not started.
+> **Status:** Draft v2 — host changed from the Pi to a cloud VM after the Pi proved
+> unreachable from the internet. Implementation not started.
 > **Date:** 2026-08-10
 > **Owner:** Helder Martins
-> **Host:** a single Linux box with Docker.
+> **Host:** a single Linux VM with Docker.
 
 ---
 
 ## 1. Purpose
 
-Run a small, private, invitation-only Minecraft server on the MarNar Pi homelab so that
-Helder's son ("MarNar") can play with a fixed group of friends, at no cost to the players,
-reachable at `minecraft.example.net`.
+Run a small, private, invitation-only Minecraft server so that Helder's son ("MarNar") can play
+with a fixed group of friends, at no cost to the players, reachable at
+`minecraft.example.net`.
 
-This repository exists to version the server configuration, the allowlist, the deployment
-stack and the operational runbooks — because the shape of this project is expected to change
-and needs to be maintainable rather than hand-tuned on the box.
+This repository versions the server configuration, the allowlist, the deployment stack and the
+operational runbooks.
 
 ---
 
@@ -26,7 +26,7 @@ and needs to be maintainable rather than hand-tuned on the box.
 | MarNar (primary) | PS5, iPad | Bedrock |
 | MarNar's approved friends | mostly PS5; some PC, some iPad | Bedrock |
 | Approved PC players | Windows/macOS/Linux | **Java** (crossplay required) |
-| Helder (admin) | Mac, SSH to Pi | operator, not necessarily a player |
+| Helder (admin) | Mac, SSH | operator, not necessarily a player |
 
 **Approved decision:** Java Edition and Bedrock Edition players share **one world**.
 
@@ -34,80 +34,95 @@ and needs to be maintainable rather than hand-tuned on the box.
 
 ## 3. Measured environment (baseline, 2026-08-10)
 
-These are live measurements, not estimates. They constrain everything below.
-
-**Host — Raspberry Pi 4 Model B Rev 1.5 (`192.168.4.200`)**
+### 3.1 Host — a small ARM cloud VM
 
 | Property | Value |
 |---|---|
-| CPU | 4 × Cortex-A72, max 1.8 GHz, `aarch64` |
-| RAM | 3795 MiB total · 722 MiB used · **3072 MiB available** |
-| Swap | **zram only**, 2048 MiB (`/dev/zram0`) |
-| Root disk | 29.2 GB SD card (`mmcblk0p2`), 24% used |
-| Bulk disk | **916 GB USB (`/dev/sda2` → `/mnt/storage`), 866 GB free, 1% used** |
-| Load average | 0.15 / 0.10 / 0.05 |
-| Existing containers | 6 — a dashboard, two application containers, `cloudflared`, `npm-app`, `portainer` |
-| Docker networks | `npm-network`, `marnar-mon_default`, plus defaults |
+| CPU | **1 vCPU**, Arm, 3.0 GHz, `aarch64` |
+| RAM | 5642 MiB total · **~2921 MiB available** |
+| Swap | 4096 MiB |
+| Disk | 183 GB root, 163 GB free |
+| Public IP | **`198.51.100.20` — static, no NAT** |
+| OS | An RHEL-family Linux 9, SELinux **Enforcing**, `dnf`, `firewall-cmd` |
+| Load average | 0.14 |
+| Existing containers | 9 — two other sites, four other application containers, NPM, MariaDB and Portainer |
+| `firewalld` open | `http`, `https`, `dhcpv6-client` only |
+| Latency to the players' region | **~134 ms RTT** (measured) |
 
-**Inherited posture from the earlier Pi design (must be consciously overridden, see §7):**
+### 3.2 Operating rules inherited from the host
 
-- Router ports 80/443 are **closed**; the only public ingress is an outbound tunnel.
-- No-IP DUC (DDNS) was **removed 2026-08-03**, with a standing "do not reintroduce it" note.
-- `*.example.net` is a **proxied** (orange-cloud) CNAME to the tunnel.
+- Stacks live at `/home/mcadmin/stacks/<name>/` and are **CLI-managed**. Portainer there is a
+  **viewer, not a deploy path** — do not deploy from its UI.
+- Every image must have a real **`arm64`/`aarch64` manifest** and be **pinned**, never `latest`.
+- SELinux is Enforcing — bind mounts need correct labelling (`:z`/`:Z`).
+- ⚠️ **The host's own notes declare that box permanently out of scope.** This project
+  overrides that by owner decision (2026-08-10). See §4.2.
 
 ---
 
-## 4. Architecture decision
+## 4. Architecture decisions
 
 ### 4.1 Server software — Paper + GeyserMC + Floodgate
 
-**Decision:** Run **PaperMC (Minecraft Java Edition server)** with the **GeyserMC** and
-**Floodgate** plugins, containerised via the multi-arch `itzg/minecraft-server` image.
+**Decision:** **PaperMC** (Minecraft Java Edition server) with **GeyserMC** and **Floodgate**,
+containerised via the multi-arch `itzg/minecraft-server` image.
 
-**Rationale — this is forced, not preferred:**
+**Rationale — forced, not preferred:** Mojang's **Bedrock Dedicated Server ships x86_64 only.
+There is no ARM64 build**, and the server is `aarch64`. Emulation is not viable for a real-time
+tick loop. A Java server *is* ARM-native, and Geyser translates the Bedrock protocol so
+PS5/iPad/PC-Bedrock clients connect natively. Floodgate lets them join **without a Java
+account**, authenticating against Xbox Live instead. This also delivers the crossplay
+requirement at no extra cost.
 
-Mojang's official **Bedrock Dedicated Server (BDS) ships x86_64 binaries only. There is no
-ARM64 build.** The Pi is `aarch64`. Emulation (Box64/QEMU) is not viable for a real-time game
-tick loop on a Cortex-A72.
+**Rejected:** official BDS (no ARM64 build) · BDS under emulation (unusable performance) ·
+PocketMine-MP (poor vanilla parity, no Java crossplay).
 
-A Java server *is* ARM-native (OpenJDK `aarch64` is first-class), and Geyser translates the
-Bedrock protocol so PS5/iPad/PC-Bedrock clients connect to it natively. Floodgate lets those
-Bedrock players join **without owning a Java account**, authenticating them against Xbox Live
-instead.
+### 4.2 Host — a cloud VM (the Pi was tried and rejected)
 
-This also satisfies the crossplay requirement for free: Java and Bedrock players land in the
-same world.
+**Decision:** Host on the cloud VM, at its **current 1 vCPU / 6 GB**, sized for **4 concurrent
+players**. *(Owner decision, 2026-08-10.)*
 
-**Rejected alternatives:**
+**Why the Pi was abandoned — measured, not assumed.** The Pi was the original choice and the
+plan was fully specified against it. It failed on one thing: **nothing inbound from the
+internet reaches it.**
 
-| Option | Why rejected |
+Diagnostics performed 2026-08-10:
+
+| Check | Result |
 |---|---|
-| Official Bedrock Dedicated Server | No ARM64 build exists |
-| BDS under Box64/QEMU emulation | Unacceptable tick performance on Cortex-A72 |
-| PocketMine-MP (ARM-native, PHP) | Not vanilla-compatible; poor feature parity; no Java crossplay |
-| Hosting on the cloud VM | Rejected by owner 2026-08-10 — see §4.2 |
+| Public IP genuinely the Pi's | ✅ STUN reports `203.0.113.10` — **CGNAT ruled out** |
+| Double NAT | ✅ ruled out — the router's own WAN IP *is* `203.0.113.10` |
+| router port-forward rules (53 and 19132, TCP & UDP, correct host, saved, Enabled) | ✅ correct |
+| router static DHCP reservation for the Pi | ✅ in place |
+| Pi host firewall | ✅ none (`iptables` INPUT policy ACCEPT, no rules) |
+| Test listener answering on the LAN, UDP **and** TCP | ✅ verified |
+| Probe host able to reach port 19132/53 on other servers | ✅ verified (`portquiz.net`) |
+| `ping` to the home IP from the internet | ✅ 0% loss |
+| **TCP and UDP to 19132 and 53 from the internet** | ❌ **ICMP "no route to host"** |
 
-### 4.2 Host — Raspberry Pi (the cloud VM rejected)
+A **forwarded** port and an **unforwarded** port behaved identically, which means the router was
+not honouring rules it displayed as Enabled. Two hypotheses were raised and then killed by
+measurement — ISP blocking of port 53, and CGNAT — and are recorded here so they are not
+revisited.
 
-**Decision:** Host on the Pi.
+The router has **no local admin interface** (cloud-only), and its cloud API could not be
+authenticated because the account uses Amazon SSO, which the unofficial API predates. So the
+fault could not be pursued further programmatically.
 
-The cloud VM was evaluated and **rejected**. Findings, recorded so this is not re-litigated:
+**Consequences of moving to a cloud VM, accepted by the owner:**
 
-- The cloud box is `aarch64` too, so it would have needed the same Paper+Geyser stack.
-- It has **1 vCPU total**, already shared by 9 containers including two other live sites.
-- Resizing to 2 vCPU / 12 GB is **within quota** (verified via the provider API: regional limits are
-  `standard-a1-core-regional-count: 2`, `standard-a1-memory-regional-count: 12`; currently
-  1 vCPU / 6 GB used in the availability domain), and the shape reports `is-flexible: true`.
-- ⚠️ **Correction to the host's own notes:** that file states a 4 vCPU / 24 GB free
-  allowance. This account's actual limit is **2 vCPU / 12 GB**. That note should be fixed.
-- **Why rejected:** resizing requires stopping the instance, and the availability domain has recently
-  been out of host capacity. A failed resize could leave the instance *stopped and unable to
-  boot*, taking down `othersite`, `anothersite`, the other containers and the SSH tunnel for
-  an indefinite period. Not an acceptable risk for a children's game server.
+- ⚠️ **~134 ms latency** for players in the target region, versus a few ms on the Pi. Acceptable for
+  survival Minecraft; noticeable in mob combat and block-breaking.
+- ⚠️ **Contention:** Minecraft shares **one vCPU** with nine existing containers, including two
+  other live sites. See §6.
+- ✅ **The networking problem disappears entirely** — static public IP, no NAT, no router, no
+  DDNS, and PS5/BedrockConnect on port 53 becomes possible.
 
-**Consequence accepted by the owner:** the Pi option requires reintroducing DDNS, publishing
-the home IP in DNS, and opening inbound ports — reversing three deliberate v9 decisions. See
-§7 and §9 for the required compensating controls.
+**Not chosen:** resizing to 2 vCPU / 12 GB. It is within quota (verified: regional limits are
+2 cores / 12 GB, 1/6 in use) and the shape reports `is-flexible: true`, but resizing requires
+stopping the instance, and an out-of-capacity AD-2 could leave it unable to boot — taking the
+live sites down indefinitely. **Player count was cut instead.** If 4 players proves too tight,
+this is the lever to revisit, with a boot-volume backup taken first.
 
 ---
 
@@ -115,123 +130,112 @@ the home IP in DNS, and opening inbound ports — reversing three deliberate v9 
 
 | ID | Requirement |
 |---|---|
-| **F-1** | The server SHALL run Minecraft in survival mode with a persistent world that survives restarts, host reboots and container recreation. |
-| **F-1a** | **PvP SHALL be disabled** (`pvp=false`) — players cannot damage each other. *(Owner decision, 2026-08-10.)* |
-| **F-1b** | **`keepInventory` SHALL be true** — players keep their items on death. *(Owner decision, 2026-08-10.)* |
-| **F-1c** | Difficulty SHALL be **Normal** (the vanilla default). *Assumed from Q-6: "Easy" was offered and not selected. Confirm — see Q-9.* |
-| **F-1d** | ⚠️ The **Nether and the End SHALL be disabled**. *Assumed from Q-6: "Allow Nether and End" was offered and not selected. **This is a large gameplay restriction** — it removes nether portals, blaze/wither content and the ender dragon, i.e. most of vanilla's late game. Please confirm this was intended — see Q-9.* |
-| **F-1e** | The server SHALL pin to the **latest Minecraft version fully supported by Geyser** at build time. Bedrock clients are force-updated by Mojang and cannot stay on an older version, so trailing the client breaks joins. *(Owner decision, 2026-08-10 — resolves Q-1.)* |
-| **F-2** | Bedrock Edition clients (PS5, iPad, PC Bedrock) SHALL be able to join. |
-| **F-3** | Java Edition clients SHALL be able to join **the same world** as Bedrock clients. |
-| **F-4** | Bedrock players SHALL NOT be required to own a Java Edition account (Floodgate). |
-| **F-5** | No player SHALL be charged anything, and the server SHALL NOT collect payments or donations. |
-| **F-6** | The server SHALL be reachable at the hostname `minecraft.example.net`. |
-| **F-7** | Java clients SHOULD be able to connect by typing the hostname alone, with no port — via an SRV record. |
-| **F-8** | Bedrock clients SHOULD be able to connect by typing the hostname alone, achieved by using the default Bedrock port 19132. |
-| **F-9** | The server SHALL support **8 concurrent players** at acceptable performance (see §6). |
-| **F-10** | An operator SHALL be able to add or remove an approved player by editing a file in this repository and running a documented deploy step — no ad-hoc edits on the box. |
-| **F-11** | The world SHALL be backed up automatically on a schedule, with restore documented and tested. |
+| **F-1** | Survival mode, with a persistent world surviving restarts, host reboots and container recreation. |
+| **F-1a** | **PvP disabled** (`pvp=false`). |
+| **F-1b** | **`keepInventory` true** — players keep items on death. |
+| **F-1c** | Difficulty **Normal** (vanilla default). *Confirmed 2026-08-10.* |
+| **F-1d** | **Nether and End both enabled** — standard vanilla progression. *Confirmed 2026-08-10.* The world border (P-5) SHALL apply to them as well, and pre-generation (P-6) SHALL cover the Nether, whose 8:1 coordinate ratio makes it cheap to pre-generate and expensive not to. |
+| **F-1e** | Pin to the **latest Minecraft version fully supported by Geyser**. Bedrock clients are force-updated by Mojang and cannot stay behind, so trailing the client breaks joins. |
+| **F-2** | Bedrock clients (PS5, iPad, PC Bedrock) SHALL be able to join. |
+| **F-3** | Java clients SHALL join **the same world** as Bedrock clients. |
+| **F-4** | Bedrock players SHALL NOT need a Java Edition account (Floodgate). |
+| **F-5** | No player SHALL be charged anything; the server SHALL NOT collect payments or donations. |
+| **F-6** | Reachable at `minecraft.example.net`. |
+| **F-7** | Java clients SHOULD connect by hostname alone, with no port — via an SRV record. |
+| **F-8** | Bedrock clients SHOULD connect by hostname alone, by using the default Bedrock port 19132. |
+| **F-9** | **4 concurrent players** at acceptable performance (§6). |
+| **F-10** | An operator SHALL add or remove an approved player by editing a file in this repo and running a documented deploy step — never ad-hoc on the box. |
+| **F-11** | The world SHALL be backed up automatically, with restore documented and tested. |
 
 ---
 
 ## 6. Performance & capacity requirements
 
-The Pi is the binding constraint. 8 players on a 4 GB Pi is **tight but achievable**, and only
-with the tuning below. These are requirements, not suggestions.
+The single vCPU, shared with nine containers, is the binding constraint.
 
 | ID | Requirement |
 |---|---|
-| **P-1** | The Minecraft container SHALL have a hard memory ceiling of **2560 MiB** (`mem_limit`), leaving ≥ 500 MiB headroom for the host and the 6 existing containers. |
-| **P-2** | JVM heap SHALL be fixed at **`-Xms1800M -Xmx1800M`** (equal min/max to avoid heap resizing pauses), with Aikar's G1GC flags. |
-| **P-3** | The JVM SHALL NOT be allowed to swap. Host swap is **zram-only (2 GB)**; a swapped JVM will destroy tick rate. Memory pressure SHALL be treated as an incident, not absorbed. |
-| **P-4** | `view-distance` SHALL be **6** and `simulation-distance` **4**. |
-| **P-5** | The world SHALL have a **world border** (initial target: 3000 blocks radius) to bound disk growth and chunk generation. |
-| **P-6** | The world SHALL be **pre-generated** to the border (e.g. Chunky) before players are invited. Chunk generation is the dominant CPU spike on a Pi; pre-generating removes it from play time. |
-| **P-7** | Server tick rate SHALL hold **≥ 18 TPS** with 8 players online in pre-generated terrain. |
-| **P-8** | The world data SHALL live on **`/mnt/storage` (USB disk)**, never on the SD card — for both I/O performance and SD card lifetime. |
-| **P-9** | No performance-heavy mods/plugins SHALL be installed. Plugin set is limited to Geyser, Floodgate, and operational plugins (backup, pre-gen) unless re-evaluated against P-7. |
+| **P-1** | Hard memory ceiling of **2048 MiB** (`mem_limit`), leaving ~870 MiB of the measured 2921 MiB available. |
+| **P-2** | JVM heap fixed at **`-Xms1536M -Xmx1536M`** (equal min/max to avoid resize pauses), with Aikar's G1GC flags. |
+| **P-3** | The JVM SHALL NOT swap. Memory pressure is an incident, not something to absorb. |
+| **P-4** | `view-distance` **6**, `simulation-distance` **4**. |
+| **P-5** | A **world border** (initial target 3000 blocks) to bound disk growth and chunk generation. |
+| **P-6** | The world SHALL be **pre-generated** to the border (e.g. Chunky) before players are invited. **This is the single most important requirement in this section** — chunk generation is the dominant CPU spike, and on a shared single core it is what would stall the other sites. Pre-generating moves that cost to a controlled window. |
+| **P-7** | Tick rate **≥ 18 TPS** with 4 players online in pre-generated terrain. |
+| **P-8** | ⚠️ **CPU contention with the existing tenants SHALL be measured before the server is opened to friends.** The other tenants share this core. If Minecraft degrades them, the resolution is P-9, not silence. |
+| **P-9** | If contention proves unacceptable, the documented options are: reduce further (2–3 players, view-distance 4), apply Docker CPU weighting so Minecraft yields under load, or revisit the 2 vCPU resize with a boot-volume backup first. |
+| **P-10** | No performance-heavy mods or plugins. The plugin set is Geyser, Floodgate, and operational plugins (backup, pre-gen) only, unless re-evaluated against P-7. |
+| **P-11** | Running Minecraft raises sustained CPU utilisation, which **helps** against the provider's idle-instance reclamation. A welcome side effect, not a design goal. |
 
-> **Honest risk note:** if P-7 cannot be met at 8 players after tuning, the realistic options
-> are to reduce the concurrent player target to 4–6, or to move the host. This is the known
-> weak point of the chosen architecture and should be measured early.
+> **Honest risk note:** 4 players on one shared vCPU is the tightest part of this design. P-7 and
+> P-8 exist to catch it early rather than discovering it with four kids online.
 
 ---
 
 ## 7. Networking & DNS requirements
 
-| ID | Requirement |
-|---|---|
-| **N-1** | `minecraft.example.net` SHALL be a **DNS-only (grey cloud) A record** pointing at the home IP. Cloudflare's proxy does not carry Minecraft traffic on the free plan, so the orange cloud must be off. |
-| **N-2** | The record SHALL be an explicit record that **overrides the proxied `*.example.net` wildcard**. |
-| **N-3** | The hostname SHALL remain a **single subdomain level with a hyphen** (`minecraft-public`, not `minecraft.public`) — Cloudflare Universal SSL covers only one level. Complies with the standing cross-project convention. |
-| **N-3a** | ⚠️ **The Pi holds `192.168.4.200` by DHCP, not static configuration** (`ipv4.method: auto`, address flagged `dynamic`, verified 2026-08-10). All port forwards below depend on that address never changing. A **static DHCP reservation SHALL be confirmed or created on the router** before any forward is relied upon. |
-| **N-3b** | ⚠️ **The Pi is connected over Wi-Fi (`wlan0`), not Ethernet** (verified 2026-08-10). Wi-Fi adds latency and jitter, which players feel directly as rubber-banding in a real-time game, and it is the least reliable link in the chain. **A wired Ethernet connection SHOULD be used.** See Q-10. |
-| **N-4** | **UDP 19132** SHALL be forwarded on the router to `192.168.4.200` (Bedrock / Geyser). |
-| **N-5** | **TCP 25565** SHALL be forwarded on the router to `192.168.4.200` (Java Edition). Required by F-3. |
-| **N-6** | An **SRV record** `_minecraft._tcp.minecraft.example.net` SHALL point to `minecraft.example.net` on port 25565, satisfying F-7. Because N-1 is a real A record and not a CNAME, this raises no RFC 2782 concern. |
-| **N-7** | **DDNS SHALL be reintroduced** to keep the A record current against the dynamic home IP. *(This knowingly reverses the "DDNS removed, do not reintroduce" note in the earlier Pi design — owner decision, 2026-08-10.)* |
-| **N-8** | DDNS SHALL be implemented as a **Cloudflare API updater** running on the Pi (e.g. `favonia/cloudflare-ddns`, arm64-native), updating the A record directly. **No third-party DDNS provider SHALL be used** — No-IP, DuckDNS and Dynu were all considered and rejected as needless dependencies given the zone is already on Cloudflare. |
-| **N-8a** | This has **no expiry and no reconfirmation step** — the failure mode that would have come with a free No-IP hostname (silent 30-day expiry) does not exist here. |
-| **N-9** | The updater SHALL authenticate with a **scoped API token limited to `Zone.DNS:Edit` on the `example.net` zone only**. It SHALL NOT use a Global API Key. |
-| **N-9a** | The updater SHALL modify **only** the `minecraft-public` record. It SHALL NOT touch the proxied `*.example.net` wildcard, the apex, or any tunnel-backed record used by the earlier Pi design. |
-| **N-10** | The Minecraft container SHALL be reachable by NPM (see N-11) but SHALL NOT be granted access to unrelated services on `npm-network` beyond what the streams require. |
-| **N-11** | Ingress SHALL be handled by **NPM Streams** — a UDP stream on 19132 and a TCP stream on 25565, each forwarding to the Minecraft container. *(Owner decision, 2026-08-10.)* This keeps all ingress visible and managed in one place, consistent with the rest of the homelab. |
-| **N-11a** | ⚠️ **Clarification, not an objection:** NPM Streams route by **port number only**. UDP carries no SNI and Minecraft carries no Host header, so the *hostname does not select the backend* — `minecraft.example.net` only resolves to the address, and ports 19132/25565 do the routing. This means **only one Minecraft server can occupy each port**; a second one later would need different ports and Bedrock clients would have to type `host:port`. |
-| **N-11b** | ⚠️ NPM streams **do not preserve the client source IP** (nginx stream SNATs; the UI exposes no PROXY-protocol toggle). Paper and Geyser will see the NPM container's IP for every player. Consequence: **IP bans and per-IP rate limiting will not work.** Acceptable here because access control is allowlist-based (§8), but it SHALL NOT be relied upon as a security control. |
-| **N-12** | Ports 80/443 SHALL remain closed and the existing tunnel SHALL remain the sole ingress for all **HTTP** services. This project opens 19132/UDP and 25565/TCP **only**. |
-
-### 7.1 PS5 connectivity — unavoidable per-console step
-
-**PS5 Minecraft does not allow entering a custom server address.** This is a platform
-restriction with no server-side fix.
+Vastly simpler than the Pi design — a static public IP removes DDNS entirely.
 
 | ID | Requirement |
 |---|---|
-| **N-13** | A **BedrockConnect** instance SHALL be self-hosted on the Pi, so approved players point their console DNS at the server's own resolver rather than a public third-party one. *(Owner decision, 2026-08-10 — resolves Q-4.)* |
-| **N-14** | The self-hosted BedrockConnect server list SHALL contain **only** this server. |
-| **N-15** | UDP/TCP **53** SHALL be forwarded on the router to the Pi. Port 53 is currently unused on the Pi (verified 2026-08-10 — nothing listening). |
-| **N-15a** | ⚠️ **Before anything is built, inbound port 53 SHALL be tested from outside the network.** Many residential ISPs block it. If blocked, N-13 is impossible as designed and the decision must be revisited. **This is the first implementation task.** |
-| **N-16** | The DNS service SHALL apply **per-source-IP rate limiting** (nftables `hashlimit` or equivalent) so it cannot be used as a traffic amplifier even if discovered by scanners. |
-| **N-17** | The DNS service SHALL have **recursion disabled** and SHALL answer only BedrockConnect's fixed hostname set, refusing everything else. It SHALL NOT be a general-purpose resolver. |
-| **N-18** | Amplification factor SHALL be **verified as ≈1×** (response size ≈ query size) before port 53 is opened. This is the property that makes N-13 acceptably safe; it SHALL be confirmed, not assumed. |
-| **N-19** | A documented rollback SHALL exist for port 53 specifically: close the router forward and the server stops being reachable for PS5 players, without affecting Java or iPad clients. |
-| **N-20** | A **player-facing setup guide** SHALL be written for PS5, iPad and PC, in plain language suitable for a child or a friend's parent to follow. |
+| **N-1** | `minecraft.example.net` SHALL be a **DNS-only (grey cloud) A record** → `198.51.100.20`. Cloudflare's proxy does not carry Minecraft traffic on the free plan. |
+| **N-2** | ⚠️ It SHALL be an **explicit record overriding the proxied `*.example.net` wildcard**. Verified 2026-08-10: `minecraft.example.net` currently resolves to Cloudflare proxy IPs (shared proxy addresses) via that wildcard, which would silently break every client. |
+| **N-3** | The hostname SHALL stay a **single subdomain level with a hyphen** — Universal SSL covers one level only. That is a certificate constraint, not a style choice. |
+| **N-4** | **No DDNS of any kind is required.** The IP is static. *(The Cloudflare API updater specified in v1 is obsolete and SHALL NOT be built.)* |
+| **N-5** | **UDP 19132** (Bedrock/Geyser) SHALL be opened in **both** `firewalld` **and** the cloud firewall. Both layers are required; either alone silently fails. |
+| **N-6** | **TCP 25565** (Java Edition) SHALL be opened in both layers. |
+| **N-7** | An **SRV record** `_minecraft._tcp.minecraft.example.net` → `minecraft.example.net` port 25565, satisfying F-7. |
+| **N-8** | The container SHALL be isolated from unrelated containers on the box, sharing only what ingress requires. |
+| **N-9** | ⚠️ The **Cloudflare origin lockdown** currently restricting inbound to Cloudflare ranges SHALL NOT be weakened for HTTP. The Minecraft ports are separate and SHALL be opened without touching the existing HTTP posture. |
+| **N-10** | Opening these ports SHALL NOT affect the server's SSH posture — **port 22 stays closed**, access remains via the SSH tunnel (`sshtunnel.example.net`). |
+
+### 7.1 PS5 connectivity
+
+**PS5 Minecraft does not allow entering a custom server address.** A platform restriction with
+no server-side fix.
+
+| ID | Requirement |
+|---|---|
+| **N-11** | **BedrockConnect** SHALL be self-hosted on the server, so approved players point their console DNS at the server's own resolver rather than a public third-party one. |
+| **N-12** | Its server list SHALL contain **only** this server. |
+| **N-13** | **UDP/TCP 53** SHALL be opened in both `firewalld` and the cloud firewall. *(Unlike the home connection, no ISP or router sits in the path here.)* |
+| **N-14** | The DNS service SHALL apply **per-source-IP rate limiting** so it cannot be used as a traffic amplifier. |
+| **N-15** | Recursion SHALL be **disabled**; it answers only BedrockConnect's fixed hostname set and refuses everything else. It SHALL NOT be a general-purpose resolver. |
+| **N-16** | Amplification factor SHALL be **verified as ≈1×** before port 53 is opened — confirmed, not assumed. |
+| **N-17** | A **player-facing setup guide** SHALL be written for PS5, iPad and PC, in plain language suitable for a child or a friend's parent. |
 
 ---
 
 ## 8. Access control requirements
 
-The core requirement from the owner: **only explicitly approved people can connect.**
+Core requirement: **only explicitly approved people can connect.**
 
 | ID | Requirement |
 |---|---|
-| **A-1** | The allowlist (`white-list=true`) SHALL be **enforced**. Unlisted accounts are rejected at login. |
-| **A-2** | `online-mode` SHALL be **true** — Java players are authenticated against Mojang/Microsoft. Cracked/offline clients are rejected. |
+| **A-1** | The allowlist (`white-list=true`) SHALL be enforced; unlisted accounts rejected at login. |
+| **A-1a** | The server SHALL be commissioned with an **empty allowlist and enforcement ON**, so it is closed to everyone — including MarNar — until gamertags are supplied. *Confirmed 2026-08-10.* |
+| **A-2** | `online-mode` SHALL be **true** — Java players authenticated against Mojang/Microsoft. |
 | **A-3** | Bedrock players SHALL be authenticated against **Xbox Live via Floodgate**, so gamertags cannot be spoofed. |
-| **A-4** | Floodgate-joined Bedrock players SHALL carry a distinguishing username prefix (default `.`) so Java and Bedrock identities cannot collide. |
-| **A-5** | The allowlist SHALL be **stored in this Git repository** as the source of truth, and deployed to the server — never edited only on the box (supports F-10). |
-| **A-6** | Operator (`op`) privileges SHALL be granted to Helder only, and SHALL NOT be granted to any child player by default. |
-| **A-7** | The server SHALL NOT be published to any public server list, and `enable-query` SHALL be disabled. |
-| **A-8** | Removing a player from the allowlist SHALL also disconnect them if currently online. |
+| **A-4** | Floodgate players SHALL carry a distinguishing username prefix (default `.`) so identities cannot collide. |
+| **A-5** | The allowlist SHALL live **in this Git repository** as the source of truth and be deployed to the server. |
+| **A-6** | Operator (`op`) privileges SHALL be Helder's only, not granted to child players by default. |
+| **A-7** | The server SHALL NOT be published to any public server list; `enable-query` disabled. |
+| **A-8** | Removing a player from the allowlist SHALL also disconnect them if online. |
 
 ---
 
 ## 9. Security requirements
 
-Publishing the home IP in DNS is a real exposure increase over the v9 baseline. These are the
-compensating controls.
-
 | ID | Requirement |
 |---|---|
-| **S-1** | The container SHALL run as a **non-root user**, with `no-new-privileges:true` and unnecessary capabilities dropped — consistent with the hardening standard used on the server. |
-| **S-2** | Only ports 19132/UDP and 25565/TCP SHALL be published. No management, RCON or query port SHALL be exposed to the internet. |
-| **S-3** | If RCON is enabled at all, it SHALL bind to localhost/LAN only and use a strong generated password stored outside this repo. |
-| **S-4** | The published home IP SHALL be understood as a **DDoS and scanning exposure**. A documented rollback SHALL exist: remove the DNS record and close the router forwards, restoring the v9 closed posture. |
-| **S-5** | The Minecraft container SHALL be isolated from the **host monitoring API** and from any container it does not need. Because ingress is via NPM streams (N-11) it shares `npm-network`; that sharing SHALL be the only coupling. |
-| **S-6** | No secrets (Cloudflare API token, RCON password) SHALL be committed to this repository. `.gitignore` SHALL enforce this and secrets SHALL be injected as environment variables. |
-| **S-6a** | The Cloudflare token's blast radius SHALL be understood and bounded: scoped per N-9, it can edit DNS on `example.net` and nothing else. It SHALL be revocable independently of any other Cloudflare credential, including the tunnel's `CF_TUNNEL_API_TOKEN` used by the earlier Pi design. |
-| **S-7** | The repository SHALL be **private**. |
-| **S-8** | The server software (Paper, Geyser, Floodgate) SHALL be updated on a defined cadence; Geyser in particular tracks Bedrock client releases and **will break joins when Mojang ships a client update** — see O-2. |
+| **S-1** | The container SHALL run **non-root**, with `no-new-privileges:true` and unnecessary capabilities dropped — matching the hardening standard already used on this box. |
+| **S-2** | Only 19132/UDP, 25565/TCP and 53 SHALL be exposed. No management, RCON or query port SHALL reach the internet. |
+| **S-3** | If RCON is enabled, it SHALL bind to localhost only, with a strong generated password stored outside this repo. |
+| **S-4** | ⚠️ **Blast radius SHALL be understood:** this box hosts live third-party sites. A Minecraft compromise SHALL NOT be able to reach them. Container isolation is a real security boundary here, not hygiene. |
+| **S-5** | No secrets SHALL be committed. `.gitignore` SHALL enforce this; secrets injected as environment variables. |
+| **S-6** | The repository SHALL be **private**. |
+| **S-7** | Paper, Geyser and Floodgate SHALL be updated on a defined cadence. Geyser tracks Bedrock client releases and **will break joins when Mojang ships a client update** — see O-2. |
+| **S-8** | A documented rollback SHALL exist: close the three ports and remove the DNS record, restoring the box's prior posture exactly. |
 
 ---
 
@@ -239,27 +243,29 @@ compensating controls.
 
 | ID | Requirement |
 |---|---|
-| **O-1** | Deployment SHALL be a **Docker Compose stack**, versioned in this repo, deployable to the Pi. Consistent with existing homelab practice. |
-| **O-2** | A documented procedure SHALL exist for the **Bedrock-client-update breakage** case: when Mojang ships a Bedrock client update, Geyser must be updated before players can rejoin. This is expected and recurring, not an incident. |
-| **O-3** | Container images SHALL be **pinned to specific tags** (not `latest`) and SHALL have a real `arm64`/`aarch64` manifest. |
-| **O-4** | World backups SHALL run **daily** to `/mnt/storage`, with retention of at least 14 dailies and 4 weeklies. |
-| **O-5** | A backup restore SHALL be **tested at least once** before the server is opened to friends. An untested backup is not a backup. |
-| **O-6** | The server SHALL be **always-on**, restarting automatically on host reboot (`restart: unless-stopped`). *(Owner decision, 2026-08-10 — resolves Q-5.)* |
-| **O-6a** | A **scheduled nightly restart** SHALL run in the early hours to clear JVM memory pressure and heap fragmentation — genuinely valuable on a 4 GB Pi (see P-1, P-3). It SHALL warn any players online before restarting, and SHALL force a world save first. |
-| **O-7** | Server health SHOULD be visible in the existing **monitoring** dashboard, or via a documented check. |
-| **O-8** | Player-facing setup guides (N-16) SHALL live in this repo under `docs/`. |
+| **O-1** | Deployment SHALL be a **Docker Compose stack** versioned in this repo, deployed **CLI-first** to `/home/mcadmin/stacks/`, per the host's rules. **Not** via the Portainer UI. |
+| **O-2** | A documented procedure SHALL exist for **Bedrock-client-update breakage**: when Mojang updates the Bedrock client, Geyser must be updated before players can rejoin. Expected and recurring, not an incident. |
+| **O-3** | Images SHALL be **pinned** (never `latest`) and SHALL have a real `arm64`/`aarch64` manifest. |
+| **O-4** | World backups SHALL run **daily**, retaining ≥14 dailies and 4 weeklies. |
+| **O-5** | A restore SHALL be **tested once** before the server is opened to friends. An untested backup is not a backup. |
+| **O-6** | The server SHALL be **always-on**, restarting automatically on host reboot (`restart: unless-stopped`). |
+| **O-6a** | A **scheduled nightly restart** SHALL clear JVM memory pressure and heap fragmentation. It SHALL warn players online and force a world save first. |
+| **O-7** | Server health SHOULD be visible via a documented check. |
+| **O-8** | Player-facing setup guides (N-17) SHALL live in this repo under `docs/`. |
 | **O-9** | Disk growth SHALL be monitored; the world border (P-5) is the primary control. |
+| **O-10** | ⚠️ Adding a tenant to the host SHALL be reflected in the host's documentation, so its operators are not surprised by new ports and a new stack. |
 
 ---
 
 ## 11. Out of scope
 
-- Monetisation of any kind — no ranks, no cosmetics, no donations (F-5).
+- Monetisation of any kind (F-5).
 - Public access or any public server listing (A-7).
-- The cloud VM (§4.2) — rejected as host, and out of scope per its own project rules.
-- Modded Minecraft (Forge/Fabric modpacks). Geyser crossplay does not survive most mods.
-- Anything requiring the host monitoring API or `npm-network` (S-5).
-- Reopening ports 80/443 (N-12).
+- **The Raspberry Pi** — tried, unreachable inbound, abandoned as host (§4.2).
+- Debugging the router's port forwarding. Parked, not solved.
+- Modded Minecraft — Geyser crossplay does not survive most mods.
+- Resizing the instance (§4.2), unless P-9 forces a revisit.
+- Reopening SSH port 22 on the server (N-10).
 
 ---
 
@@ -267,16 +273,11 @@ compensating controls.
 
 | # | Question | Blocks |
 |---|---|---|
-| **Q-1** | *Resolved 2026-08-10 — pin to the latest Geyser-supported version (F-1e).* | — |
 | **Q-2** | What are the actual gamertags/usernames for the initial allowlist? | A-5 |
-| **Q-3** | Does the router support the required port forwards without UPnP, and is a static DHCP reservation in place for `192.168.4.200`? **Partially answered: the Pi is on DHCP, so a reservation is required — see N-3a.** | N-4, N-5, N-15 |
-| **Q-4** | *Resolved 2026-08-10 — self-host BedrockConnect on the Pi with rate limiting (N-13 to N-19).* | — |
-| **Q-5** | *Resolved 2026-08-10 — always-on with a nightly restart (O-6, O-6a).* | — |
-| **Q-6** | *Resolved 2026-08-10 — PvP off, keepInventory on (F-1a, F-1b). Difficulty and Nether/End inferred, see Q-9.* | — |
-| **Q-7** | Is an offsite copy of the world backup wanted, or is `/mnt/storage` sufficient? | O-4 |
-| **Q-8** | *Resolved 2026-08-10 — No-IP dropped in favour of the Cloudflare API updater (N-8).* | — |
-| **Q-9** | ⚠️ **Confirm two gameplay settings inferred from omission**, not from an explicit choice: difficulty **Normal** (F-1c), and the **Nether and End disabled** (F-1d). The second in particular removes most of vanilla's late game — please confirm it was intended. | F-1c, F-1d |
-| **Q-10** | The Pi is on **Wi-Fi**. Can it be moved to wired Ethernet? Players feel Wi-Fi jitter directly as rubber-banding. | N-3b |
+| **Q-7** | Is an offsite copy of the world backup wanted, or is the boot volume sufficient? | O-4 |
+| ~~Q-9~~ | ~~Confirm difficulty and dimensions.~~ **Resolved 2026-08-10: Normal difficulty, Nether and End both enabled.** | — |
+| **Q-11** | Is ~134 ms latency acceptable to MarNar in practice? Worth a real test before inviting friends. | §4.2 |
+| **Q-12** | Should the world be seeded fresh, or is there an existing world to import? | F-1 |
 
 ---
 
@@ -284,16 +285,16 @@ compensating controls.
 
 | Date | Decision | By |
 |---|---|---|
-| 2026-08-10 | Host on the Raspberry Pi; cloud VM rejected due to host-capacity risk during resize | Helder |
-| 2026-08-10 | Reintroduce DDNS, accepting home-IP publication | Helder |
-| 2026-08-10 | DDNS via a **Cloudflare API updater** on the Pi with a scoped `Zone.DNS:Edit` token, updating a direct A record. No-IP DUC was briefly chosen and then dropped — its free tier expires unless reconfirmed by email every 30 days, and any third-party DDNS provider is a needless dependency when the zone is already on Cloudflare. | Helder |
-| 2026-08-10 | Ingress via **NPM Streams** (UDP 19132, TCP 25565), keeping all ingress managed in NPM | Helder |
-| 2026-08-10 | Support Java + Bedrock crossplay in one world | Helder |
-| 2026-08-10 | Size for 8 concurrent players | Helder |
-| 2026-08-10 | Private GitHub repository | Helder |
 | 2026-08-10 | Paper + Geyser + Floodgate (forced: no ARM64 Bedrock Dedicated Server exists) | Analysis |
-| 2026-08-10 | Self-host BedrockConnect on the Pi with per-source rate limiting, rather than using the public service | Helder |
-| 2026-08-10 | Pin to the latest Geyser-supported Minecraft version | Helder |
-| 2026-08-10 | PvP off, keepInventory on | Helder |
-| 2026-08-10 | Always-on, with a scheduled nightly restart | Helder |
-| 2026-08-10 | Correction recorded: recorded free-tier allowance is 2 vCPU / 12 GB, not 4 / 24 (recorded in an internal note) | Analysis |
+| 2026-08-10 | Support Java + Bedrock crossplay in one world | Helder |
+| 2026-08-10 | Private GitHub repository | Helder |
+| 2026-08-10 | Host on the Raspberry Pi; cloud VM rejected over resize capacity risk | Helder |
+| 2026-08-10 | DDNS via a Cloudflare API updater; ingress via NPM Streams | Helder |
+| 2026-08-10 | **Pi abandoned** — inbound unreachable; CGNAT, double NAT, ISP blocking and host firewall all ruled out by measurement; router not honouring saved forwards | Analysis |
+| 2026-08-10 | **Host on the cloud VM at 1 vCPU, player target cut 8 → 4** rather than accept the resize risk | Helder |
+| 2026-08-10 | DDNS and NPM Streams both dropped — a static IP makes them unnecessary | Analysis |
+| 2026-08-10 | Self-host BedrockConnect with rate limiting; pin to latest Geyser-supported version; PvP off, keepInventory on; always-on with nightly restart | Helder |
+| 2026-08-10 | Correction recorded: recorded free-tier allowance is 2 vCPU / 12 GB, not 4 / 24 | Analysis |
+| 2026-08-10 | Pi test artefacts removed; six containers untouched | Analysis |
+| 2026-08-10 | Difficulty Normal; **Nether and End enabled**; allowlist commissioned empty with enforcement on | Helder |
+| 2026-08-10 | Full unattended install authorised, **including exposing port 53** for BedrockConnect, subject to N-14/N-15/N-16 | Helder |
