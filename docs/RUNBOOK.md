@@ -54,6 +54,17 @@ python3 scripts/raknetping.py
 TPS below 18 sustained is the escalation trigger (P-7). One dip during chunk
 generation is not.
 
+**If it is sustained**, in order of least disruption: drop `VIEW_DISTANCE` to 4
+and `SIMULATION_DISTANCE` to 3 · lower `cpu_shares` so Minecraft yields harder
+to the other sites · cut `MAX_PLAYERS` to 2–3 · disable the End.
+
+> ⛔ **Do not propose resizing the instance.** It is permanently ruled out
+> (P-9a), not a contingency. Stopping the instance risks an out-of-capacity
+> availability domain leaving it unable to boot, which takes the other live
+> sites down indefinitely. The player count was cut 8 → 4 to buy out exactly
+> this risk. If 4 players is too tight, the server gets smaller — not the box
+> bigger.
+
 ---
 
 ## 3. Adding or removing a player (F-10, A-1)

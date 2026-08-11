@@ -120,11 +120,14 @@ fault could not be pursued further programmatically.
 - ✅ **The networking problem disappears entirely** — static public IP, no NAT, no router, no
   DDNS, and PS5/BedrockConnect on port 53 becomes possible.
 
-**Not chosen:** resizing to 2 vCPU / 12 GB. It is within quota (verified: regional limits are
-2 cores / 12 GB, 1/6 in use) and the shape reports `is-flexible: true`, but resizing requires
-stopping the instance, and an out-of-capacity AD-2 could leave it unable to boot — taking the
-live sites down indefinitely. **Player count was cut instead.** If 4 players proves too tight,
-this is the lever to revisit, with a boot-volume backup taken first.
+**Ruled out — permanently, not provisionally:** resizing to 2 vCPU / 12 GB. It is within quota
+(verified: regional limits are 2 cores / 12 GB, 1/6 in use) and the shape reports
+`is-flexible: true`, but resizing requires stopping the instance, and an out-of-capacity AD-2
+could leave it unable to boot — taking the other live sites down indefinitely, for a
+children's game server. **The player count was cut 8 → 4 specifically to buy out this risk.**
+
+⛔ This is settled and is **not** a lever held in reserve. See **P-9a**. If 4 players proves too
+tight, the server gets smaller — not the box bigger.
 
 ---
 
@@ -165,7 +168,8 @@ The single vCPU, shared with nine containers, is the binding constraint.
 | **P-6** | The world SHALL be **pre-generated** to the border (e.g. Chunky) before players are invited. **This is the single most important requirement in this section** — chunk generation is the dominant CPU spike, and on a shared single core it is what would stall the other sites. Pre-generating moves that cost to a controlled window. **Met 2026-08-10**, all three dimensions: overworld 35,721 chunks in 39:46 (~17 cps), Nether 625 chunks in 0:29, End 35,721 chunks in 5:39 (~100 cps — the End is mostly void, so it generates fast). Total ~46 min, run overnight with no players. |
 | **P-7** | Tick rate **≥ 18 TPS** with 4 players online in pre-generated terrain. **Partially verified 2026-08-10**: TPS held at **19.3–20.0 throughout pre-generation**, which is a far heavier load than four children playing — but with **zero players online**. The requirement as written needs 4 real players and cannot be closed until they exist. The margin observed makes it very likely to pass. |
 | **P-8** | ⚠️ **CPU contention with the existing tenants SHALL be measured before the server is opened to friends.** The other tenants share this core. If Minecraft degrades them, the resolution is P-9, not silence. **Measured 2026-08-10 under pre-generation**, i.e. the heaviest this tenant will ever be: load average 0.94–2.01 on 1 vCPU, `minecraft` at 82% CPU and every other container ≤13%, `othersite.example.com` served **200 in 0.98s** during it. Memory is the tighter constraint, not CPU — the container runs near its 2 GiB cap by design, leaving ~1.7 GiB free on the box. All three new containers run at `cpu_shares` below the default so the existing tenants win contention. |
-| **P-9** | If contention proves unacceptable, the documented options are: reduce further (2–3 players, view-distance 4), apply Docker CPU weighting so Minecraft yields under load, or revisit the 2 vCPU resize with a boot-volume backup first. |
+| **P-9** | If contention proves unacceptable, the documented options are: reduce the player count further (2–3), drop view-distance to 4 and simulation-distance to 3, lower `cpu_shares` so Minecraft yields harder, or disable the End. ⛔ **Resizing the instance is NOT one of them.** See P-9a. |
+| **P-9a** | ⛔ **Resizing the instance is permanently off the table.** *Ruled out by Helder 2026-08-10, restated 2026-08-11.* It requires stopping the instance, and an out-of-capacity availability domain could leave it unable to boot — which would take the two other live sites down indefinitely, for a children's game server. The player count was cut 8 → 4 **specifically to avoid this**, so proposing it later reopens a decision that has already been paid for. Do not offer it as an escalation path, a contingency, or a "if it gets tight" aside. If 4 players is too tight, the server gets smaller, not the box bigger. |
 | **P-10** | No performance-heavy mods or plugins. The plugin set is Geyser, Floodgate, and operational plugins (backup, pre-gen) only, unless re-evaluated against P-7. |
 | **P-11** | Running Minecraft raises sustained CPU utilisation, which **helps** against the provider's idle-instance reclamation. A welcome side effect, not a design goal. |
 
@@ -267,7 +271,7 @@ Core requirement: **only explicitly approved people can connect.**
 - **The Raspberry Pi** — tried, unreachable inbound, abandoned as host (§4.2).
 - Debugging the router's port forwarding. Parked, not solved.
 - Modded Minecraft — Geyser crossplay does not survive most mods.
-- Resizing the instance (§4.2), unless P-9 forces a revisit.
+- **Resizing the instance — permanently, with no revisit condition** (§4.2, P-9a).
 - Reopening SSH port 22 on the server (N-10).
 
 ---
