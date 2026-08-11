@@ -547,19 +547,21 @@ per `docker exec`.
 
 ## 9. Known open items
 
-- ⛔ **The PS5 path is blocked by PlayStation Plus, and no amount of debugging
-  here will change that.** Verified 2026-08-11 by a real connection attempt:
-  Minecraft on PS4/PS5 requires an active PS Plus subscription for online
-  multiplayer, third-party servers included. Sony's gate, checked before
-  anything this project built is reached. **Helder holds none and will not buy
-  one** (N-18). If someone reports the console failing, this is the first thing
-  to confirm — *not* the DNS settings, which is where the troubleshooting used
-  to point. `bedrock-connect`, `mc-dns` and port 53 remain deployed by decision;
-  their fate is Q-13.
+- ⚠️ **The PS5 path needs the player's own PlayStation Plus, and no amount of
+  debugging here will change that.** Verified 2026-08-11 by a real connection
+  attempt: Minecraft on PS4/PS5 requires an active PS Plus subscription for
+  online multiplayer, third-party servers included. Sony's gate, checked before
+  anything this project built is reached. It is **per player**: Helder holds
+  none, so MarNar plays from the iPad, but friends whose families have it can join
+  from their consoles (N-18). If someone reports the console failing, **confirm
+  the subscription first** — *not* the DNS settings, which is where the
+  troubleshooting used to point. `bedrock-connect`, `mc-dns` and port 53 are in
+  use, not vestigial.
 - **Whether the console falls back to its secondary DNS on `REFUSED` is still
-  unobserved**, and now probably never will be. `REFUSED` remains the right
-  choice (unlike `NXDOMAIN`, it means "ask someone else"), but it is untested
-  and the path that would have tested it is blocked.
+  unobserved.** `REFUSED` remains the right choice (unlike `NXDOMAIN`, it means
+  "ask someone else"), but no console has walked the path yet. The first friend
+  who connects from a PS5 is the test — if their console keeps working for
+  everything that is not Minecraft, this is answered.
 - **Amplification is 1.95×, not the ≈1× originally assumed** (N-16). Re-run
   `scripts/amptest.py` after any Corefile change; above 2× means the resolver
   has started answering something it should refuse.

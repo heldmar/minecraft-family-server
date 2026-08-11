@@ -1,27 +1,22 @@
 # Entrar al servidor desde PS5
 
-> # ⛔ PARÁ ACÁ — por ahora esta guía no sirve
+> # ⚠️ Antes de empezar: hace falta PlayStation Plus
 >
 > **Para entrar a este servidor desde una PS5 hace falta PlayStation Plus**, la
 > suscripción paga de Sony. Sin ella la consola no deja entrar a **ningún**
 > servidor de Minecraft, ni siquiera a uno privado como el nuestro.
 >
-> Esto **no lo podemos arreglar de nuestro lado**. No es un problema del
-> servidor, ni del DNS, ni de la lista de jugadores: lo decide Sony. Minecraft en
-> la PS5 sólo deja jugar en línea si hay PlayStation Plus.
+> Eso **no lo podemos arreglar de nuestro lado**, y no tiene nada que ver con el
+> servidor, el DNS ni la lista de jugadores: lo decide Sony.
 >
-> **No hagas los pasos de abajo.** Le vas a cambiar la configuración de red a la
-> consola para nada.
+> - **Si en tu casa ya tienen PlayStation Plus** — seguí esta guía, funciona.
+> - **Si no lo tienen** — no hagas los pasos de abajo, le vas a cambiar la
+>   configuración de red a la consola para nada. Pero el chico igual puede
+>   jugar: **iPad, celular y Minecraft en la compu** (Bedrock o Java) entran
+>   gratis, sin ninguna suscripción, y la guía es
+>   **[SETUP-IPAD-Y-PC.md](SETUP-IPAD-Y-PC.md)**.
 >
-> ### Lo que sí funciona, gratis y sin ninguna suscripción
->
-> **iPad, celular, y Minecraft en la compu** (tanto Bedrock como Java). Todo eso
-> entra al servidor sin pagar nada. La guía es
-> **[SETUP-IPAD-Y-PC.md](SETUP-IPAD-Y-PC.md)**.
->
-> *Comprobado el 2026-08-11. El resto de esta guía queda escrita porque los pasos
-> son correctos y servirían si algún día hubiera PlayStation Plus — pero hasta
-> entonces no la sigas.*
+> *Comprobado el 2026-08-11.*
 
 ---
 
@@ -135,5 +130,5 @@ Concretamente:
 - **Quién lo opera:** Helder, en un servidor propio. No hay terceros en el medio,
   y el servidor no cobra nada.
 - ⚠️ **Lo que sí cuesta plata:** PlayStation Plus, que Sony exige para jugar en
-  línea en la PS5. Eso es de Sony y es lo que hoy bloquea este camino — ver el
-  aviso del principio. Nuestro servidor sigue siendo gratis; la consola no.
+  línea en la PS5 — ver el aviso del principio. Eso se le paga a Sony, no a
+  nosotros. Nuestro servidor sigue siendo gratis; la consola no.

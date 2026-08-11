@@ -36,6 +36,12 @@ services:
       # dismantled, Geyser moves back to 19132 and this must change with it.
       SERVER_HOST: "minecraft.example.net"
       BEDROCK_PORT: "19133"
+      # What a PS5 needs instead of an address, since Sony gives no field for
+      # one. The primary is this box's public IP and must stay an IP — it is
+      # what the console asks to resolve names. The secondary handles everything
+      # that is not Minecraft; without it the console loses internet generally.
+      PS5_DNS_PRIMARY: "198.51.100.20"
+      PS5_DNS_SECONDARY: "1.1.1.1"
       # Injected server-side into the /api proxy. Value lives in .env, which is
       # not committed, and must match MCADMIN_TOKEN in the agent's environment.
       API_TOKEN: "${API_TOKEN:?API_TOKEN must be set in .env}"

@@ -25,16 +25,16 @@ operational runbooks.
 
 | User | Devices | Edition | Can actually play? |
 |---|---|---|---|
-| MarNar (primary) | ~~PS5~~, iPad | Bedrock | ⛔ **iPad only** — see N-18 |
-| MarNar's approved friends | mostly PS5; some PC, some iPad | Bedrock | ⛔ **only the PC/iPad minority** — see N-18 |
+| MarNar (primary) | ~~PS5~~, iPad | Bedrock | ✅ **iPad** — the PS5 is out for *him*, see N-18 |
+| MarNar's approved friends | mostly PS5; some PC, some iPad | Bedrock | ✅ PC/iPad always; **PS5 if that family holds PS Plus** — N-18 |
 | Approved PC players | Windows/macOS/Linux | **Java** (crossplay required) | ✅ unaffected |
 | Helder (admin) | Mac, SSH | operator, not necessarily a player | ✅ |
 
-⛔ **Updated 2026-08-11.** The PS5 is out — Minecraft on PlayStation requires PS Plus for online
-multiplayer, and there is none (**N-18**). Since the friend group was described as *mostly PS5*,
-the eligible player pool is now materially smaller than this table was written to describe.
-**Whether the server still has enough players to be worth running is an open question (Q-13),
-not a settled one.**
+⚠️ **Updated 2026-08-11.** Minecraft on PlayStation requires PS Plus for online multiplayer
+(**N-18**). That is a **per-player** prerequisite, not a property of this server: Helder holds no
+subscription, so MarNar plays from the iPad, but **Helder confirmed 2026-08-11 that some of the
+friends' families do have PS Plus**, and those consoles can join. The console path stays built and
+supported.
 
 **Approved decision:** Java Edition and Bedrock Edition players share **one world**.
 
@@ -205,21 +205,22 @@ Vastly simpler than the Pi design — a static public IP removes DDNS entirely.
 
 ### 7.1 PS5 connectivity
 
-> ## ⛔ BLOCKED — the PS5 path cannot be used, and it is not a fault in anything below
+> ## ⚠️ The PS5 path needs the **player's own** PlayStation Plus
 >
 > **Minecraft Bedrock on PS4/PS5 requires an active PlayStation Plus subscription for online
 > multiplayer, and that includes third-party servers like this one.** Verified 2026-08-11 after
 > Helder attempted a real connection. It is Sony's platform gate, not Mojang's and not ours;
 > without it the console is limited to single-player, local splitscreen and LAN.
 >
-> **Helder's decision, 2026-08-11: there is no PS Plus in the household and none will be
-> purchased.** The console path is therefore unusable for its intended players.
+> **This is a per-player prerequisite.** Helder holds no subscription and will not buy one, so
+> **MarNar plays from the iPad** — but each friend's console is gated by *that* family's
+> subscription, and Helder confirmed 2026-08-11 that some of the friends have PS Plus. **The
+> console path is therefore in active use, not stranded.**
 >
-> ⚠️ **Nothing in N-11 … N-17 is wrong, and nothing below fixes this.** BedrockConnect and the
-> DNS redirect solve the *addressing* problem — a console that cannot type a server address.
+> ⚠️ **Nothing in N-11 … N-17 is wrong, and nothing below changes this gate.** BedrockConnect and
+> the DNS redirect solve the *addressing* problem — a console that cannot type a server address.
 > They do not touch the *authorisation* gate, which is checked by the platform before any of
-> this is reached. Everything in this section was built, measured and verified, and all of it
-> works; it simply cannot be reached by the people it was built for.
+> this is reached. Both are needed; neither substitutes for the other.
 >
 > **This was an unstated assumption at the foundation of the design.** PS Plus appeared nowhere
 > in this repository before 2026-08-11 — not here, not in `SETUP-PS5.md`, not in the README.
@@ -227,16 +228,16 @@ Vastly simpler than the Pi design — a static public IP removes DDNS entirely.
 > risk as *whether DNS fallback behaves*; the actual risk was *whether a console can join at
 > all*. See **N-18**.
 >
-> **Current state: deployed and untouched.** Helder decided 2026-08-11 to document this and
-> change nothing operationally — `bedrock-connect` and `mc-dns` are still running, port 53 is
-> still open, and Geyser is still on 19133. See **Q-13** for the decision that is still open.
+> **Current state: deployed and in use.** `bedrock-connect` and `mc-dns` are running, port 53 is
+> open, and Geyser is on 19133. Player-facing instructions live in `SETUP-PS5.md` and in the
+> admin panel's *How to join* card.
 
 **PS5 Minecraft does not allow entering a custom server address.** A platform restriction with
 no server-side fix.
 
 | ID | Requirement |
 |---|---|
-| **N-18** | ⛔ **PlayStation Plus is a hard prerequisite for the PS5 path, and it is not met.** *Verified 2026-08-11 by attempted connection and confirmed against multiple sources.* Sony requires an active PS Plus subscription for online multiplayer in any paid title, third-party servers included. **Helder, 2026-08-11: not held, and will not be purchased.** Consequences: MarNar plays on **iPad only**; friends described in §2 as "mostly PS5" are excluded unless they have their own PS Plus, an iPad or a PC; and **F-9's 4-concurrent-player target may now be unreachable for lack of eligible devices**, which also makes the §6 contention analysis far less pressing than it was. ⚠️ A LAN-style bridge was **raised and deliberately not investigated** — Sony permits LAN multiplayer without PS Plus, but whether a remote server can be presented to a PS5 as a LAN game in 2026 is **unverified and is recorded here as unknown, not as an option**. Do not repeat it as a possibility without testing it. |
+| **N-18** | ⚠️ **PlayStation Plus is a hard prerequisite for the PS5 path — per player, not per server.** *Verified 2026-08-11 by attempted connection and confirmed against multiple sources.* Sony requires an active PS Plus subscription for online multiplayer in any paid title, third-party servers included. **Helder, 2026-08-11: not held in this household, and will not be purchased** — so MarNar plays from the **iPad**. **Helder, 2026-08-11: some of MarNar's friends do have PS Plus**, and their consoles can join normally; the console path stays built, documented and supported for them. Each console is gated by its own family's subscription, which the server cannot see or influence. ⚠️ A LAN-style bridge was **raised and deliberately not investigated** — Sony permits LAN multiplayer without PS Plus, but whether a remote server can be presented to a PS5 as a LAN game in 2026 is **unverified and is recorded here as unknown, not as an option**. Do not repeat it as a possibility without testing it. |
 | **N-11** | **BedrockConnect** SHALL be self-hosted on the server, so approved players point their console DNS at the server's own resolver rather than a public third-party one. |
 | **N-12** | Its server list SHALL contain **only** this server. |
 | **N-11a** | **BedrockConnect SHALL own UDP 19132**, and Geyser SHALL move to 19133. This is forced, not a preference: every console "featured server" entry hard-codes port 19132, so whatever the console is redirected to must answer there. The two cannot share the port. This is what makes F-8 unachievable. |
@@ -322,8 +323,8 @@ Core requirement: **only explicitly approved people can connect.**
 | **Q-2** | What are the actual gamertags/usernames for the initial allowlist? | A-5 |
 | ~~Q-7~~ | ~~Is an offsite copy of the world backup wanted?~~ **Answered 2026-08-11: yes — Amazon S3.** ⏸️ **Deliberately deferred**, not forgotten: Helder wants the server proven in a real play test before adding another moving part. Until then, backups stay local-only on the boot volume, and the accepted risk is that losing that volume loses the world. Tracked as **O-4a**. | O-4a |
 | ~~Q-9~~ | ~~Confirm difficulty and dimensions.~~ **Resolved 2026-08-10: Normal difficulty, Nether and End both enabled.** | — |
-| **Q-11** | Is ~134 ms latency acceptable to MarNar in practice? Worth a real test before inviting friends. **Still open, and now iPad-only** — the test has to be run on the device he will actually use (N-18). | §4.2 |
-| **Q-13** | ⛔ **What is this server for now, given that the PS5 is out?** Raised 2026-08-11, **undecided**. The primary platform and most of the intended friend group are excluded by N-18. Three things follow and none are decided: ① is the remaining iPad/PC pool big enough to be worth running the server for; ② should the console path be dismantled — removing `bedrock-connect` and `mc-dns`, **closing port 53** (which retires the only public DNS responder on a box hosting two other live third-party sites, plus the 1.95× amplification surface and the `DOCKER-USER`/port-1053 trap), and **moving Geyser back to 19132, which would un-abandon F-8** so iPad/PC Bedrock players need no port at all — noting this is cheap now and gets harder once anyone is connected; ③ or is it worth first testing the unverified LAN avenue in N-18. **Helder decided 2026-08-11 to document and change nothing for now**, so the stacks remain deployed. This is parked, not resolved. | N-18, F-8, F-9 |
+| **Q-11** | Is ~134 ms latency acceptable to MarNar in practice? Worth a real test before inviting friends. **Still open** — the test has to be run on the device he will actually use, which for MarNar is the iPad (N-18). | §4.2 |
+| **Q-13** | ~~**What is this server for now, given that the PS5 is out?**~~ **Premise superseded 2026-08-11, later the same day.** It was raised on the belief that the console path was dead for everyone. It is not: PS Plus is a **per-player** gate, and Helder stated that some of MarNar's friends' families hold it (N-18). The consequences that hung off the premise fall with it — the console path is **not** to be dismantled, `bedrock-connect` / `mc-dns` / port 53 stay, and Geyser stays on 19133 (F-8 stays abandoned as recorded). The one thing this question raised that does *not* depend on the premise: the LAN avenue in N-18 remains **untested and unclaimed**. ⚠️ Left in the register rather than deleted so the reversal is visible; **whether it is formally closed is Helder's call.** | N-18, F-8, F-9 |
 | **Q-12** | Should the world be seeded fresh, or is there an existing world to import? ⚠️ **Answered by default, and it is now costly to change.** A fresh world was generated with seed **`1944975880419099066`** and pre-generated to the 3000-block border. Importing a different world after this point means discarding that work and re-running pre-generation (~1h per dimension on this box). If there *is* an existing world to bring over, say so before anyone starts building. | F-1 |
 
 ---
@@ -352,6 +353,7 @@ Core requirement: **only explicitly approved people can connect.**
 | 2026-08-10 | **F-8 abandoned**: Geyser moved to 19133 so BedrockConnect can own 19132. PS5 is the primary objective and is unaffected; iPad/PC pay one extra field | Analysis |
 | 2026-08-10 | N-16 rewritten from the assumed "≈1×" to the **measured 1.95×**, with a <2× ceiling as the actual gate | Analysis |
 | 2026-08-11 | ⛔ **PS5 path found to be blocked by a PlayStation Plus requirement** — verified after a real connection attempt. An unstated assumption that sat under the whole design and appeared nowhere in this repo (N-18) | Analysis |
-| 2026-08-11 | **No PS Plus is held and none will be purchased.** The console path is unusable; MarNar plays on iPad | Helder |
+| 2026-08-11 | **No PS Plus is held in this household and none will be purchased.** MarNar plays on iPad | Helder |
+| 2026-08-11 | ↩️ **"The console path is unusable" reversed the same day** — PS Plus is a **per-player** gate, and some of MarNar's friends' families hold it. The console path stays built and supported; the PS5 guide and the admin panel now carry the prerequisite instead of a block notice. Q-13's premise falls with it | Helder |
 | 2026-08-11 | **Document the finding, change nothing operationally** — no teardown, port 53 stays open, Geyser stays on 19133, the stacks stay deployed. Scope of the server left open as Q-13 | Helder |
 | 2026-08-10 | Nether border set to **375**, i.e. overworld ÷ 8, so every in-border overworld location has a reachable Nether counterpart and no more | Analysis |

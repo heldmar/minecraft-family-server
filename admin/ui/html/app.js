@@ -179,13 +179,6 @@
       $("#st-online").textContent = s.players_online;
       $("#st-online-foot").textContent = t("players.onlineFoot", { max: s.players_max || 4 });
       $("#st-tps").textContent = s.tps || "–";
-
-      // The PS5 path needs all three containers. A console failing because
-      // bedrock-connect is down looks identical to the game server being down,
-      // so it gets its own card rather than being buried in a log.
-      var ps5 = s.bedrock_connect === "running" && s.mc_dns === "running" && up;
-      $("#st-path").textContent = ps5 ? t("players.pathOk") : t("players.pathBad");
-      $("#st-path").style.color = ps5 ? "" : "var(--redstone)";
     });
   }
 
@@ -200,6 +193,8 @@
   // passed through the dictionary (A-7) — only the labels around them are.
   var HOST = CFG.SERVER_HOST || "";
   var BPORT = CFG.BEDROCK_PORT || "";
+  var DNS1 = CFG.PS5_DNS_PRIMARY || "";
+  var DNS2 = CFG.PS5_DNS_SECONDARY || "";
 
   function copyBtn(value) {
     return el("button", {
@@ -218,22 +213,51 @@
     });
   }
 
-  function connectRow(whatKey, address, port, blockedKey) {
-    var what = el("div", { cls: "connect-what", text: t(whatKey) });
+  // A field with a label, a verbatim value and a copy button. The value is DATA
+  // (A-7): an address, a port or a DNS number, never run through the dictionary.
+  function connectField(labelKey, value) {
+    return el("div", { cls: "connect-field" }, [
+      el("span", { cls: "connect-k", text: t(labelKey) }),
+      el("code", { cls: "connect-v", text: value }),
+      copyBtn(value)
+    ]);
+  }
 
-    if (blockedKey) {
-      return el("div", { cls: "connect-row is-blocked" }, [
-        what,
-        el("p", { cls: "connect-blocked", text: t(blockedKey) })
-      ]);
-    }
+  // The console row is shaped differently from the others on purpose. A PS5 has
+  // nowhere to type a server address — Sony provides no such field — so it
+  // reaches us by pointing its DNS here and picking us out of BedrockConnect's
+  // menu (N-11a). Showing it an "address and port" it cannot use would be worse
+  // than showing nothing. So: the two DNS numbers a parent types once, then the
+  // in-game steps, then the two things that actually stop people — the
+  // subscription, and not being on the list.
+  function connectPs5Row() {
+    var steps = el("ol", { cls: "connect-steps" });
+    ["connect.ps5Step1", "connect.ps5Step2", "connect.ps5Step3"].forEach(function (k) {
+      steps.appendChild(el("li", { text: t(k) }));
+    });
+
+    return el("div", { cls: "connect-row connect-row-wide" }, [
+      el("div", { cls: "connect-what" }, [
+        el("span", { text: t("connect.ps5What") }),
+        el("span", { cls: "connect-badge", text: t("connect.ps5Plus") })
+      ]),
+      el("div", { cls: "connect-vals" }, [
+        el("p", { cls: "connect-note", text: t("connect.ps5DnsIntro") }),
+        connectField("connect.ps5Dns1Label", DNS1),
+        connectField("connect.ps5Dns2Label", DNS2),
+        el("p", { cls: "connect-warn", text: t("connect.ps5Dns2Warn") }),
+        el("p", { cls: "connect-note", text: t("connect.ps5StepsIntro") }),
+        steps,
+        el("p", { cls: "connect-warn", text: t("connect.ps5Roster") })
+      ])
+    ]);
+  }
+
+  function connectRow(whatKey, address, port) {
+    var what = el("div", { cls: "connect-what" }, [el("span", { text: t(whatKey) })]);
 
     var vals = el("div", { cls: "connect-vals" }, [
-      el("div", { cls: "connect-field" }, [
-        el("span", { cls: "connect-k", text: t("connect.addressLabel") }),
-        el("code", { cls: "connect-v", text: address }),
-        copyBtn(address)
-      ]),
+      connectField("connect.addressLabel", address),
       el("div", { cls: "connect-field" }, [
         el("span", { cls: "connect-k", text: t("connect.portLabel") }),
         port ? el("code", { cls: "connect-v", text: port })
@@ -250,7 +274,7 @@
     box.textContent = "";
     box.appendChild(connectRow("connect.bedrockWhat", HOST, BPORT));
     box.appendChild(connectRow("connect.javaWhat", HOST, ""));
-    box.appendChild(connectRow("connect.ps5What", "", "", "connect.ps5Blocked"));
+    box.appendChild(connectPs5Row());
   }
 
   // ---- players -----------------------------------------------------------

@@ -22,6 +22,23 @@ API_TOKEN="${API_TOKEN:-}"
 SERVER_HOST="${SERVER_HOST:-minecraft.example.net}"
 BEDROCK_PORT="${BEDROCK_PORT:-19133}"
 
+# A PS5 cannot be given a server address at all — Sony provides no field for one
+# — so consoles reach us by pointing their DNS at this box and picking the
+# server out of BedrockConnect's menu (N-11a). That makes these two values the
+# console's entire configuration, which is why they belong on screen next to the
+# Bedrock address rather than only in SETUP-PS5.md.
+#
+# PS5_DNS_PRIMARY is the box's PUBLIC IP, not a hostname: the console asks it to
+# resolve names, so it cannot itself be a name. Change it if the instance is
+# ever rebuilt or its ephemeral IP is replaced.
+#
+# The secondary is deliberately a general-purpose resolver. mc-dns answers only
+# for Minecraft's featured-server names and refuses everything else on purpose,
+# so without a working secondary the console loses internet for the store,
+# streaming and every other game.
+PS5_DNS_PRIMARY="${PS5_DNS_PRIMARY:-198.51.100.20}"
+PS5_DNS_SECONDARY="${PS5_DNS_SECONDARY:-1.1.1.1}"
+
 # Where the bearer token lives depends on the mode, and the difference is not
 # cosmetic:
 #
@@ -46,7 +63,9 @@ window.__MCADMIN_CONFIG__ = {
   REFRESH_SECONDS: ${REFRESH_SECONDS:-20},
   API_TOKEN: "${CONFIG_TOKEN}",
   SERVER_HOST: "${SERVER_HOST}",
-  BEDROCK_PORT: "${BEDROCK_PORT}"
+  BEDROCK_PORT: "${BEDROCK_PORT}",
+  PS5_DNS_PRIMARY: "${PS5_DNS_PRIMARY}",
+  PS5_DNS_SECONDARY: "${PS5_DNS_SECONDARY}"
 };
 EOF
 

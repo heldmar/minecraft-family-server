@@ -326,17 +326,38 @@ input[type=file] { padding: 8px; background: #F4F7F0; }
 code.connect-v { background: #E6EFDD; padding: 3px 8px; border-radius: 6px; }
 .connect-v.is-none { color: var(--ink-soft); font-style: italic; user-select: none; }
 
-/* Blocked by something outside this server — today, the PS5 and PS Plus
-   (N-18). Deliberately not styled as an error: nothing is broken, and the
-   panel must not send MarNar looking for a fault he cannot find. */
-.connect-row.is-blocked {
-  background: #FAF6F6; border-left-color: var(--redstone);
-  opacity: .92;
+/* The console row carries setup instructions rather than a single address, so
+   it stacks instead of sitting on one line. Same card, more room. */
+.connect-row-wide { align-items: flex-start; }
+.connect-row-wide .connect-vals {
+  flex-direction: column; align-items: flex-start; gap: 9px; max-width: 66ch;
 }
-.connect-row.is-blocked .connect-what { color: #7A3A3A; }
-.connect-blocked {
-  margin: 0; font-size: 12.5px; line-height: 1.55; color: #7A3A3A; max-width: 62ch;
+.connect-what { display: flex; flex-direction: column; gap: 4px; }
+
+/* "needs PlayStation Plus" — a prerequisite, NOT a fault. Styled as a quiet
+   badge rather than an error: the console path works, it is Sony's paywall in
+   front of it, and the panel must not send MarNar hunting for a broken thing. */
+.connect-badge {
+  align-self: flex-start;
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; color: #7A3A3A;
+  background: #F6E9E9; border: 1px solid #E2C9C9;
+  padding: 2px 7px; border-radius: 999px; white-space: nowrap;
 }
+
+.connect-note {
+  margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--ink-soft);
+}
+.connect-warn {
+  margin: 0; font-size: 12.5px; line-height: 1.55; color: #7A3A3A;
+  background: #FAF6F6; border-left: 3px solid var(--redstone);
+  padding: 7px 10px; border-radius: 0 6px 6px 0;
+}
+.connect-steps {
+  margin: 0; padding-left: 20px;
+  font-size: 12.5px; line-height: 1.6; color: var(--ink);
+}
+.connect-steps li { margin: 2px 0; }
 
 @media (max-width: 700px) {
   .connect-what { min-width: 100%; }
