@@ -1,0 +1,59 @@
+[Unit]
+Description=MarNar's Minecraft Server admin agent
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+# Binds to the npm-network bridge gateway, which does not exist until dockerd
+# has created the network. PartOf makes a docker restart carry this unit along,
+# otherwise the agent survives with a socket bound to an address that is gone.
+PartOf=docker.service
+
+[Service]
+Type=simple
+User=mcadmin
+Group=mcadmin
+EnvironmentFile=/etc/marnar-mc-admin/agent.env
+ExecStart=/usr/local/bin/mcadmin-agent.py
+Restart=on-failure
+RestartSec=5
+
+# ⚠️ NoNewPrivileges MUST stay false here, unlike the other services on this box.
+# The whole design is that this unprivileged agent escalates through sudo to one
+# specific script; NoNewPrivileges=true blocks setuid binaries, so sudo fails and
+# every verb returns an error that looks like a permissions bug in the script.
+NoNewPrivileges=false
+
+# ⚠️ And setting it false is not enough on its own. Several hardening options
+# IMPLY NoNewPrivileges=yes and will quietly win over the line above:
+# ProtectKernelTunables, ProtectKernelModules, ProtectKernelLogs, ProtectClock,
+# LockPersonality, PrivateDevices, RestrictNamespaces, RestrictRealtime,
+# RestrictSUIDSGID, SystemCallFilter, MemoryDenyWriteExecute.
+#
+# This unit had ProtectKernelTunables and LockPersonality, and every verb failed
+# with sudo's "no new privileges" error while both the unit file and
+# `systemctl show -p NoNewPrivileges` said no. Check the live process, not the
+# unit: `grep NoNewPrivs /proc/$(systemctl show -p MainPID --value ...)/status`.
+# Before adding any hardening directive here, check whether it implies NNP.
+
+# ⚠️ systemd's sandboxing is a MOUNT NAMESPACE, and it is inherited by children
+# — including the privileged one this agent starts through sudo. So a directive
+# here does not only constrain the agent, it constrains marnar-mc-adminctl
+# running as root, which is the thing that has to move worlds around under
+# /home/mcadmin.
+#
+# This unit started as ProtectSystem=strict + ProtectHome=true and produced a
+# beautifully misleading result: every verb "worked", returning 0 MB for the
+# world and an empty backup list, because root inside the namespace genuinely
+# could not see /home. Nothing errored. Do not tighten these two without
+# checking what adminctl reads and writes.
+#
+# ProtectSystem=full still gives /usr, /boot and /etc read-only, which is the
+# part worth having: the agent's own code and the sudoers file that defines its
+# privilege cannot be rewritten by it.
+ProtectSystem=full
+ProtectHome=false
+StateDirectory=marnar-mc-admin
+PrivateTmp=true
+MemoryMax=192M
+
+[Install]
+WantedBy=multi-user.target

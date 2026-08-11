@@ -72,6 +72,16 @@ services:
       MEMORY: "1536M"
       USE_AIKAR_FLAGS: "true"
 
+      # World seed. Empty means "let Minecraft pick", which is what happened on
+      # first generation (the result was 1944975880419099066). It has to come
+      # through the environment rather than being written into
+      # server.properties: itzg rewrites level-seed from $SEED at every start,
+      # so a value edited into the file by hand is silently discarded.
+      #
+      # The admin UI's "generate a new world" writes MC_SEED into .env — which
+      # only takes effect for a world being created, never for an existing one.
+      SEED: "${MC_SEED:-}"
+
       # P-4: the main CPU lever after pre-generation.
       VIEW_DISTANCE: "6"
       SIMULATION_DISTANCE: "4"

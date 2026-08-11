@@ -12,10 +12,12 @@ Requirement IDs refer to [REQUIREMENTS.md](REQUIREMENTS.md).
 | Thing | Location |
 |---|---|
 | Host | A cloud VM, `198.51.100.20`, `ssh mcserver` (over an SSH tunnel; port 22 is closed) |
-| Stacks | `/home/mcadmin/stacks/{minecraft,bedrock-connect,mc-dns}/` |
+| Stacks | `/home/mcadmin/stacks/{minecraft,bedrock-connect,mc-dns,mc-admin}/` |
 | World | `/home/mcadmin/stacks/minecraft/data/` |
+| Roster + audit log | `/home/mcadmin/stacks/minecraft/roster/` (**not** in Git — F-10a) |
 | Backups | `/home/mcadmin/backups/minecraft/{daily,weekly}/` |
 | Scripts | `/usr/local/sbin/marnar-mc-*` |
+| Admin UI | <https://minecraft-admin.example.net> · agent `marnar-mc-admin.service` |
 | Timers | `marnar-mc-backup.timer` (04:00), `marnar-mc-restart.timer` (05:00) |
 
 Three containers, and it is worth knowing which does what before touching any of
@@ -73,24 +75,27 @@ The allowlist is **on and enforced**, and was deliberately commissioned
 **empty** — nobody can join until added, including MarNar. This is the intended
 state, not a misconfiguration.
 
-The roster is **`players/allowlist.txt` in this repo**, and the server is a copy
-of it. Edit the file, commit, deploy:
+**Normally you do this in the admin UI**: <https://minecraft-admin.example.net> →
+*Jugadores* → fill in platform, gamertag, who they are. It writes the roster,
+syncs the server and records the change in one step. Removing someone is the
+**Quitar** button on their row, which also kicks them if they are online.
+
+The roster is **`/home/mcadmin/stacks/minecraft/roster/allowlist.txt` on the
+server** — deliberately **not** in this repo. The repo is a generic server
+build; who plays is usage data (F-10a). It rides along in the nightly backup.
+
+By hand, if the UI is down:
 
 ```bash
-# 1. edit players/allowlist.txt, one line per player:
-#      bedrock  TheirXboxGamertag   # Who they are — PS5
-#      java     TheirMinecraftName  # Who they are — PC
-
-# 2. commit it (this is the audit trail — that is the point of F-10)
-git commit -am "Add <name> to the allowlist"
-
-# 3. deploy
-scp players/allowlist.txt mcserver:/home/mcadmin/stacks/minecraft/roster/allowlist.txt
-ssh mcserver 'sudo marnar-mc-sync-players --dry-run'   # check, then drop --dry-run
+ssh mcserver
+sudo vi /home/mcadmin/stacks/minecraft/roster/allowlist.txt   # one line per player:
+#   bedrock  TheirXboxGamertag   # Who they are — PS5
+#   java     TheirMinecraftName  # Who they are — PC
+sudo marnar-mc-sync-players --dry-run                     # check, then drop --dry-run
 ```
 
-Removing someone is the same flow: delete their line and sync. The sync removes
-anyone on the server who is not in the file, and kicks them if they are online.
+The sync removes anyone on the server who is not in the file, and kicks them if
+they are online.
 
 Two things to get right, both of which fail the same confusing way — a generic
 "not white-listed" kick with nothing useful in the log:
@@ -106,6 +111,56 @@ Floodgate adds it, and the sync compares both forms.
 
 ⚠️ Because the file is authoritative, anyone added by hand over RCON is removed
 at the next sync. That is intended. `--dry-run` shows exactly what would change.
+
+If the UI shows someone as **sin sincronizar**, they are on the roster but the
+server's `whitelist.json` does not have them — they will get a plain "not
+white-listed" kick with nothing useful in the log. Press **Sincronizar**.
+
+---
+
+## 3b. The admin panel (F-10b, S-9)
+
+<https://minecraft-admin.example.net> — NPM Access List for the login, then two
+sections: **Jugadores** and **Mundo**, plus **Actividad** (audit log + server
+console).
+
+Three moving parts:
+
+| Part | Where |
+|---|---|
+| UI container | `mc-admin`, `/home/mcadmin/stacks/mc-admin/`, on `npm-network` |
+| Host agent | `marnar-mc-admin.service`, listens on `172.18.0.1:8788` |
+| Privileged verbs | `/usr/local/sbin/marnar-mc-adminctl` (root), via sudoers |
+
+```bash
+ssh mcserver 'systemctl status marnar-mc-admin --no-pager; docker ps | grep mc-admin'
+ssh mcserver 'journalctl -u marnar-mc-admin -n 50 --no-pager'
+```
+
+**Panel loads but everything says "Sin conexión al agente"** → the agent is
+down, or its bearer token no longer matches. The token lives in two places and
+they must be identical: `MCADMIN_TOKEN` in `/etc/marnar-mc-admin/agent.env`, and
+`API_TOKEN` in `/home/mcadmin/stacks/mc-admin/.env`. Neither is in Git.
+
+**Every verb fails with a permissions error** → check `NoNewPrivileges` in
+`marnar-mc-admin.service` is **false**. It is `true` on every other service on
+this box, and copying that here silently breaks sudo, which is the agent's only
+way to do anything.
+
+> ⛔ **Never put `mcadmin` in the `docker` group**, and never widen the sudoers
+> entry to `docker`. Both are root on this host, which also runs two live
+> other sites. The fixed verb list in `marnar-mc-adminctl` is the entire
+> security model (S-9) — if the agent can run docker directly, there isn't one.
+
+**A world operation is stuck.** They are jobs; only one runs at a time. Watch it
+directly:
+
+```bash
+ssh mcserver 'docker logs -f minecraft'
+```
+
+Chunky reports progress every 120 seconds during pre-generation. Polling faster
+than that looks exactly like a stall and is not one.
 
 ---
 

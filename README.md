@@ -19,7 +19,7 @@ Two things stand between here and inviting people:
 1. **Nobody is on the allowlist yet** — deliberately. The server was
    commissioned with the allowlist on and enforced and empty, including MarNar,
    so there was never a window where it was reachable and open. Add gamertags
-   to [`players/allowlist.txt`](players/allowlist.txt) and sync.
+   in the [admin panel](admin/README.md).
 2. **The PS5 path has never been walked on an actual PS5.** Every component is
    verified independently; the end-to-end run needs a console.
 
@@ -51,6 +51,12 @@ for the other parents)*
 19132 because consoles hard-code it, so Geyser moved one along. PS5 is
 unaffected — it never types an address.
 
+### Administering it
+
+**<https://minecraft-admin.example.net>** — add and remove players, take and
+restore backups, import or regenerate the world. Authentication is an NPM Access
+List; there is no user database, by decision. See [`admin/`](admin/README.md).
+
 ## Why not the Pi
 
 The Pi was the original choice and the plan was fully written against it. It was abandoned on
@@ -74,20 +80,31 @@ docs/
   RUNBOOK.md           ← operating it: health, backups, rollback, known traps
   SETUP-PS5.md         ← player-facing, Spanish
   SETUP-IPAD-Y-PC.md   ← player-facing, Spanish
-players/
-  allowlist.txt        ← who is allowed on. Source of truth; the server is a copy
+admin/
+  README.md            ← the panel: architecture, deploy, and the traps it cost
+  ui/                  ← static SPA + nginx image, no build step
+  agent/               ← host agent (Python stdlib), systemd unit, sudoers
+  install.sh           ← idempotent deploy
 stacks/
   minecraft/           ← Paper + Geyser + Floodgate      TCP 25565, UDP 19133
   bedrock-connect/     ← the menu consoles land in       UDP 19132
   mc-dns/              ← non-recursive DNS redirect      UDP/TCP 53
 scripts/
+  marnar-mc-adminctl         ← the privileged verbs the admin panel may invoke
   marnar-mc-backup           ← daily world backup (systemd timer, 04:00)
   marnar-mc-restart          ← nightly JVM bounce (systemd timer, 05:00)
   marnar-mc-restore-test     ← proves a backup boots, without touching the live world
-  marnar-mc-sync-players     ← applies players/allowlist.txt to the server
+  marnar-mc-sync-players     ← applies the on-server roster to the whitelist
   marnar-mc-dns-ratelimit    ← per-source rate limit on port 53
   raknetping.py / amptest.py / ratetest.py  ← the verifications, kept so they can be re-run
 ```
 
 Everything under `stacks/*/data/` is gitignored — worlds and generated config
 live on the server, and `.env` (RCON password) is never committed.
+
+**Player data is deliberately not in this repository.** The roster and the audit
+log of who was added or removed live at
+`/home/mcadmin/stacks/minecraft/roster/` on the server and ride along in the nightly
+backup. This repo describes how to *build* the server; who currently plays on it
+is usage data about a handful of children, and does not belong in something
+whose value is being copyable (F-10a).

@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>MarNar's Minecraft Server — Admin</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%23866043'/><rect width='16' height='6' fill='%235D9C3C'/></svg>">
+<link rel="stylesheet" href="/styles.css">
+<script src="/config.js"></script>
+</head>
+<body>
+
+<aside class="sidebar">
+  <!-- The official Minecraft logo is Mojang's trademark, so this is a
+       blocky wordmark and a hand-drawn grass block rather than the real
+       asset — same feel, nothing borrowed. -->
+  <div class="brand">
+    <svg class="brand-block" viewBox="0 0 16 16" aria-hidden="true">
+      <rect width="16" height="16" fill="#866043"/>
+      <rect y="9" width="16" height="1" fill="#6B4A2F" opacity=".5"/>
+      <rect x="3" y="11" width="2" height="2" fill="#6B4A2F"/>
+      <rect x="9" y="12" width="3" height="2" fill="#9A7150"/>
+      <rect x="6" y="10" width="2" height="1" fill="#9A7150"/>
+      <rect width="16" height="5" fill="#5D9C3C"/>
+      <rect y="5" width="16" height="1" fill="#4E8532"/>
+      <rect x="1" y="4" width="2" height="2" fill="#6FB247"/>
+      <rect x="7" y="5" width="2" height="1" fill="#6FB247"/>
+      <rect x="12" y="4" width="2" height="2" fill="#6FB247"/>
+      <rect width="16" height="2" fill="#6FB247"/>
+    </svg>
+    <div class="brand-text">
+      <span class="brand-name">MarNar's</span>
+      <span class="brand-sub">Minecraft Server</span>
+    </div>
+  </div>
+
+  <nav class="nav">
+    <button class="nav-item is-active" data-view="players">
+      <span class="nav-ico">🎮</span> Jugadores
+    </button>
+    <button class="nav-item" data-view="world">
+      <span class="nav-ico">🌍</span> Mundo
+    </button>
+    <button class="nav-item" data-view="activity">
+      <span class="nav-ico">📜</span> Actividad
+    </button>
+  </nav>
+
+  <div class="sidebar-foot">
+    <div class="pill" id="side-status"><span class="dot"></span><span>Conectando…</span></div>
+    <button class="btn btn-ghost btn-sm" id="btn-restart">Reiniciar servidor</button>
+  </div>
+</aside>
+
+<main class="main">
+
+  <header class="topbar">
+    <div>
+      <h1 id="view-title">Jugadores</h1>
+      <p class="muted" id="view-sub">Quién puede entrar al servidor</p>
+    </div>
+    <div class="topbar-right">
+      <div class="stat-mini"><b id="hdr-players">–</b><span>en línea</span></div>
+      <div class="stat-mini"><b id="hdr-tps">–</b><span>TPS</span></div>
+      <div class="stat-mini"><b id="hdr-version">–</b><span>versión</span></div>
+      <button class="btn btn-ghost btn-sm" id="btn-refresh" title="Actualizar">↻</button>
+    </div>
+  </header>
+
+  <!-- ================= PLAYERS ================= -->
+  <section class="view" id="view-players">
+
+    <div class="cards">
+      <div class="card stat" data-accent="grass">
+        <span class="stat-label">En la lista</span>
+        <b class="stat-value" id="st-roster">–</b>
+        <span class="stat-foot">jugadores permitidos</span>
+      </div>
+      <div class="card stat" data-accent="diamond">
+        <span class="stat-label">Jugando ahora</span>
+        <b class="stat-value" id="st-online">–</b>
+        <span class="stat-foot">de <span id="st-max">4</span> lugares</span>
+      </div>
+      <div class="card stat" data-accent="gold">
+        <span class="stat-label">Rendimiento</span>
+        <b class="stat-value" id="st-tps">–</b>
+        <span class="stat-foot">TPS (20 es perfecto)</span>
+      </div>
+      <div class="card stat" data-accent="redstone">
+        <span class="stat-label">Ruta PS5</span>
+        <b class="stat-value" id="st-path">–</b>
+        <span class="stat-foot">DNS + BedrockConnect</span>
+      </div>
+    </div>
+
+    <div class="split">
+      <div class="card">
+        <div class="card-head">
+          <h2>Lista de permitidos</h2>
+          <button class="btn btn-ghost btn-sm" id="btn-sync">Sincronizar</button>
+        </div>
+        <div class="table-wrap">
+          <table id="players-table">
+            <thead>
+              <tr><th>Gamertag</th><th>Plataforma</th><th>Quién es</th><th>Estado</th><th></th></tr>
+            </thead>
+            <tbody><tr><td colspan="5" class="empty">Cargando…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Agregar jugador</h2></div>
+        <form id="add-form" class="form">
+          <label>Plataforma
+            <select name="platform" required>
+              <option value="bedrock">Bedrock — PS5, iPad, Switch, móvil</option>
+              <option value="java">Java — PC</option>
+            </select>
+          </label>
+          <label>Gamertag
+            <input name="tag" required autocomplete="off" placeholder="p. ej. MarNarCraft99">
+          </label>
+          <label>Quién es
+            <input name="note" autocomplete="off" placeholder="p. ej. MarNar — PS5">
+          </label>
+
+          <div class="hint">
+            <b>⚠️ Para PS5, iPad y Switch hace falta el gamertag de Xbox / Microsoft</b>,
+            no el nombre de PlayStation. Suelen ser distintos y solo funciona el de Xbox.
+            No escribas el punto que aparece adelante en el juego — lo agrega Floodgate.
+          </div>
+
+          <button class="btn btn-primary" type="submit">Agregar y sincronizar</button>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= WORLD ================= -->
+  <section class="view is-hidden" id="view-world">
+
+    <div class="cards">
+      <div class="card stat" data-accent="grass">
+        <span class="stat-label">Semilla</span>
+        <b class="stat-value mono sm" id="w-seed">–</b>
+        <span class="stat-foot">seed del mundo</span>
+      </div>
+      <div class="card stat" data-accent="diamond">
+        <span class="stat-label">Borde</span>
+        <b class="stat-value" id="w-border">–</b>
+        <span class="stat-foot">bloques de ancho</span>
+      </div>
+      <div class="card stat" data-accent="gold">
+        <span class="stat-label">Tamaño</span>
+        <b class="stat-value" id="w-size">–</b>
+        <span class="stat-foot">en disco</span>
+      </div>
+      <div class="card stat" data-accent="redstone">
+        <span class="stat-label">Respaldos</span>
+        <b class="stat-value" id="w-backups">–</b>
+        <span class="stat-foot">copias guardadas</span>
+      </div>
+    </div>
+
+    <div class="split">
+      <div class="card">
+        <div class="card-head">
+          <h2>Respaldos</h2>
+          <button class="btn btn-ghost btn-sm" id="btn-backup">Respaldar ahora</button>
+        </div>
+        <div class="table-wrap tall">
+          <table id="backups-table">
+            <thead><tr><th>Archivo</th><th>Cuándo</th><th>Tamaño</th><th></th></tr></thead>
+            <tbody><tr><td colspan="4" class="empty">Cargando…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="stack">
+        <div class="card">
+          <div class="card-head"><h2>Importar un mundo</h2></div>
+          <form id="import-form" class="form">
+            <label>Archivo del mundo
+              <input type="file" name="file" accept=".zip,.tar.gz,.tgz,.tar.zst" required>
+            </label>
+            <div class="hint">
+              Se acepta <code>.zip</code>, <code>.tar.gz</code> o <code>.tar.zst</code>.
+              Adentro tiene que estar <code>level.dat</code> — es la carpeta del mundo,
+              no la carpeta del servidor entero.
+            </div>
+            <div class="progress is-hidden" id="upload-progress"><div></div></div>
+            <button class="btn btn-primary" type="submit">Subir e importar</button>
+          </form>
+        </div>
+
+        <div class="card card-danger">
+          <div class="card-head"><h2>⛏️ Generar un mundo nuevo</h2></div>
+          <form id="regen-form" class="form">
+            <label>Semilla <span class="muted">(vacío = al azar)</span>
+              <input name="seed" inputmode="numeric" autocomplete="off" placeholder="al azar">
+            </label>
+            <label>Ancho del borde
+              <input name="size" type="number" min="500" max="20000" step="100" value="3000">
+            </label>
+            <div class="hint hint-danger">
+              Esto reemplaza el mundo actual y tarda <b>unos 45 minutos</b> pre-generando
+              los chunks. Antes de empezar se hace un respaldo y el mundo viejo se guarda
+              como <code>world.replaced-…</code> — nunca se borra.
+            </div>
+            <button class="btn btn-danger" type="submit">Generar mundo nuevo</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= ACTIVITY ================= -->
+  <section class="view is-hidden" id="view-activity">
+    <div class="split">
+      <div class="card">
+        <div class="card-head"><h2>Qué se hizo</h2></div>
+        <div class="table-wrap tall">
+          <table id="audit-table">
+            <thead><tr><th>Cuándo</th><th>Desde</th><th>Acción</th></tr></thead>
+            <tbody><tr><td colspan="3" class="empty">Cargando…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <h2>Consola del servidor</h2>
+          <button class="btn btn-ghost btn-sm" id="btn-logs">Actualizar</button>
+        </div>
+        <pre class="console" id="server-logs">Cargando…</pre>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- Job overlay: shown while a long operation runs -->
+<div class="overlay is-hidden" id="job-overlay">
+  <div class="job card">
+    <div class="card-head">
+      <h2><span id="job-title">Trabajando…</span></h2>
+      <span class="pill" id="job-state"><span class="dot"></span><span>en curso</span></span>
+    </div>
+    <p class="muted" id="job-note">Podés cerrar esta ventana, el trabajo sigue en el servidor.</p>
+    <pre class="console" id="job-log"></pre>
+    <button class="btn btn-ghost" id="job-close">Cerrar</button>
+  </div>
+</div>
+
+<!-- Confirm dialog -->
+<div class="overlay is-hidden" id="confirm-overlay">
+  <div class="card confirm">
+    <h2 id="confirm-title">¿Seguro?</h2>
+    <p id="confirm-body"></p>
+    <div class="confirm-actions">
+      <button class="btn btn-ghost" id="confirm-no">Cancelar</button>
+      <button class="btn btn-danger" id="confirm-yes">Sí, hacerlo</button>
+    </div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+
+<script src="/app.js"></script>
+</body>
+</html>

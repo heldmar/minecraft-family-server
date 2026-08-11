@@ -1,9 +1,14 @@
 #!/bin/bash
-# Sync the server's whitelist from players/allowlist.txt (F-10).
+# Sync the server's whitelist from the roster file (F-10).
 #
-# The requirement is that adding or removing a player is a reviewed change in
-# the repo followed by a documented deploy step — not somebody typing into RCON
-# at 11pm. So this file is the source of truth and the server is the copy.
+# The roster is the source of truth and the server's whitelist.json is a copy of
+# it. Normally this runs behind the admin UI, which edits the roster and then
+# calls this; it is also safe to run by hand after editing the file directly.
+#
+# ⚠️ The roster lives ON THE SERVER and is deliberately NOT in Git. Who plays
+# here is usage data about a handful of children, not configuration — the repo
+# describes how to build the server, not who is on it. It rides along in the
+# nightly world backups, which is where it belongs.
 #
 # Consequence worth stating plainly: this REMOVES anyone on the server who is
 # not in the file. That is the point — it is what makes the file authoritative
@@ -17,17 +22,24 @@
 # "not white-listed" kick with nothing in the log to explain it.
 set -uo pipefail
 
-# Two homes, so the same script works from a checkout and from /usr/local/sbin:
-# the repo copy sits next to players/, the deployed copy is scp'd to the stack
-# directory. Explicit ROSTER= wins over both.
-DEPLOYED=/home/mcadmin/stacks/minecraft/roster/allowlist.txt
-if [ -z "${ROSTER:-}" ]; then
-  if [ -f "$(dirname "$0")/../players/allowlist.txt" ]; then
-    ROSTER=$(dirname "$0")/../players/allowlist.txt
-  else
-    ROSTER=$DEPLOYED
-  fi
-fi
+# One home: the server. ROSTER= overrides it, which is how marnar-mc-adminctl
+# passes the path in. Created empty on first run rather than treated as an
+# error — an empty roster is the state this server was commissioned in.
+ROSTER=${ROSTER:-/home/mcadmin/stacks/minecraft/roster/allowlist.txt}
+mkdir -p "$(dirname "$ROSTER")"
+[ -f "$ROSTER" ] || cat > "$ROSTER" <<'SEED'
+# Who may join MarNar's Minecraft Server. One player per line:
+#
+#   <platform>  <gamertag>   # who they are
+#
+# platform is `bedrock` (PS5, iPad, Switch, phone) or `java` (PC).
+#
+# ⚠️ Bedrock players need their XBOX / MICROSOFT gamertag, not their PlayStation
+# name. They are usually different and only the Xbox one works.
+#
+# Do not type the leading dot Bedrock players show with in game — Floodgate
+# adds it, and the sync compares both forms.
+SEED
 DRY=false
 [ "${1:-}" = "--dry-run" ] && DRY=true
 

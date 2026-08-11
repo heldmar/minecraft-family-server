@@ -1,0 +1,410 @@
+#!/bin/bash
+# Privileged operations for the admin UI — and the security boundary for it.
+#
+# The admin agent runs as an unprivileged user with no docker group membership
+# (docker group is root-equivalent) and no direct docker access at all. The one
+# thing it may do is run THIS script through sudo. So the set of verbs below is
+# the complete set of things a compromise of the web UI can accomplish on a box
+# that also hosts two other live sites.
+#
+# That only holds if two properties are maintained:
+#
+#   1. This file stays root-owned and not writable by the agent user. If the
+#      agent can edit it, the boundary is decorative.
+#   2. The sudoers entry grants THIS PATH ONLY. Do not be tempted to widen it to
+#      `docker *` — `docker exec` into any container is a root shell on the host,
+#      so that single wildcard hands over the whole box, those sites included.
+#
+# Verbs take positional arguments and are validated here, not by the caller.
+# Anything unrecognised exits non-zero without doing anything.
+#
+# Output is JSON on stdout for the machine-readable verbs, and plain progress
+# text for the long-running ones (the agent streams it into a job log).
+set -uo pipefail
+
+STACK=/home/mcadmin/stacks/minecraft
+DATA=$STACK/data
+WORLD=$DATA/world
+ROSTER=$STACK/roster/allowlist.txt
+AUDIT=$STACK/roster/audit.log
+BACKUPS=/home/mcadmin/backups/minecraft
+COMPOSE="docker compose -f $STACK/docker-compose.yml"
+
+die() { echo "ERROR: $*" >&2; exit 1; }
+
+# Who asked. The agent passes the authenticated identity through so the audit
+# log records a person rather than "the web ui". Never trusted for authorisation
+# — only for the record.
+ACTOR=${MCADMIN_ACTOR:-unknown}
+
+audit() {
+  mkdir -p "$(dirname "$AUDIT")"
+  printf '%s\t%s\t%s\n' "$(date -Is)" "$ACTOR" "$*" >> "$AUDIT"
+}
+
+# JSON string escaping. Gamertags are attacker-influenced (whoever you invite
+# picks their own), so nothing goes into a JSON response unescaped.
+jstr() {
+  printf '%s' "$1" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'
+}
+
+# Paper colours its console output, so rcon-cli returns ANSI escapes and, in
+# some commands, Minecraft's own § codes. Left in, they poison every numeric
+# parse downstream — `tps` returned "33" for a perfectly healthy server, which
+# is the "33" in the ESC[33m that precedes the text. Strip both here, once,
+# rather than in each caller.
+rcon() {
+  docker exec minecraft rcon-cli "$1" \
+    | sed -e 's/\x1b\[[0-9;]*[a-zA-Z]//g' -e 's/\xc2\xa7[0-9a-fk-orA-FK-OR]//g'
+}
+
+running() { [ "$(docker inspect -f '{{.State.Running}}' minecraft 2>/dev/null)" = "true" ]; }
+
+# A gamertag is the one piece of free text that reaches a shell command, so it
+# is validated against what Microsoft and Mojang actually allow rather than
+# merely "looks harmless". Anything else is rejected outright — including the
+# leading dot Floodgate displays, which is added by Floodgate and must not be
+# typed by the operator.
+valid_tag() {
+  case "$1" in
+    ''|*[!A-Za-z0-9_\ -]*) return 1 ;;
+  esac
+  [ ${#1} -ge 3 ] && [ ${#1} -le 16 ]
+}
+
+# ---------------------------------------------------------------------------
+# status — one call, everything the dashboard header shows
+# ---------------------------------------------------------------------------
+verb_status() {
+  local state players_online players_max tps version uptime dsk
+  state=$(docker inspect -f '{{.State.Status}}' minecraft 2>/dev/null || echo "absent")
+  uptime=$(docker inspect -f '{{.State.StartedAt}}' minecraft 2>/dev/null || echo "")
+  version=$(docker inspect minecraft --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | sed -n 's/^VERSION=//p')
+
+  players_online=0; players_max=0; tps=""
+  if running; then
+    local list
+    list=$(rcon "list" 2>/dev/null)
+    # "There are 2 of a max of 4 players online: ..." — take the two numbers.
+    players_online=$(printf '%s' "$list" | grep -o '[0-9]\+' | head -1)
+    players_max=$(printf '%s' "$list" | grep -o '[0-9]\+' | sed -n 2p)
+    # "TPS from last 1m, 5m, 15m: 20.0, 20.0, 20.0" — take the first value AFTER
+    # the colon. Grabbing the first number in the line yields the "1" of "1m".
+    tps=$(rcon "tps" 2>/dev/null | sed -n 's/.*15m: *//p' | cut -d, -f1 | tr -d ' *')
+  fi
+  dsk=$(du -sm "$DATA" 2>/dev/null | cut -f1)
+
+  # The other two containers matter because the PS5 path needs all three: a
+  # console that cannot reach bedrock-connect or mc-dns fails in a way that
+  # looks exactly like the game server being down.
+  local bc mcdns
+  bc=$(docker inspect -f '{{.State.Status}}' bedrock-connect 2>/dev/null || echo absent)
+  mcdns=$(docker inspect -f '{{.State.Status}}' mc-dns 2>/dev/null || echo absent)
+
+  cat <<EOF
+{"state":$(jstr "$state"),"started_at":$(jstr "$uptime"),"version":$(jstr "$version"),
+ "players_online":${players_online:-0},"players_max":${players_max:-0},
+ "tps":$(jstr "${tps:-}"),"world_mb":${dsk:-0},
+ "bedrock_connect":$(jstr "$bc"),"mc_dns":$(jstr "$mcdns")}
+EOF
+}
+
+# ---------------------------------------------------------------------------
+# players
+# ---------------------------------------------------------------------------
+verb_players_list() {
+  # The roster file is the source of truth; whitelist.json is what the server
+  # actually enforces. Showing both is deliberate — when they disagree, that
+  # disagreement IS the thing the operator needs to see, and silently showing
+  # only one of them is how you end up debugging "I added him and he still
+  # can't join".
+  local online=""
+  running && online=$(rcon "list" 2>/dev/null | sed 's/^[^:]*:*//')
+
+  local enforced
+  enforced=$(docker exec minecraft cat /data/whitelist.json 2>/dev/null \
+             | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' \
+             | sed 's/.*"\([^"]*\)"$/\1/')
+
+  echo '{"players":['
+  local first=1
+  if [ -f "$ROSTER" ]; then
+    while read -r platform tag rest; do
+      [ -z "${platform:-}" ] && continue
+      case "$platform" in \#*) continue ;; esac
+      [ -z "${tag:-}" ] && continue
+      local on=false note is_enforced=false
+      note=$(printf '%s' "${rest:-}" | sed 's/^[[:space:]]*#*[[:space:]]*//')
+      printf '%s' "$online" | grep -qiw "$tag" && on=true
+      if printf '%s' "$enforced" | grep -qxF "$tag" || printf '%s' "$enforced" | grep -qxF ".$tag"; then
+        is_enforced=true
+      fi
+      [ $first -eq 1 ] || echo ','
+      first=0
+      printf '{"tag":%s,"platform":%s,"note":%s,"online":%s,"enforced":%s}' \
+        "$(jstr "$tag")" "$(jstr "$platform")" "$(jstr "$note")" "$on" "$is_enforced"
+    done < <(sed 's/\r$//' "$ROSTER")
+  fi
+  echo ']}'
+}
+
+verb_players_add() {
+  local platform=${1:?platform} tag=${2:?tag} note=${3:-}
+  case "$platform" in bedrock|java) ;; *) die "platform must be bedrock or java" ;; esac
+  valid_tag "$tag" || die "invalid gamertag: 3-16 chars, letters, digits, spaces, _ and - only"
+
+  mkdir -p "$(dirname "$ROSTER")"; touch "$ROSTER"
+  # Case-insensitive, because gamertags are, and a duplicate that differs only
+  # in case produces two roster lines that fight each other on every sync.
+  if awk -v t="$tag" 'BEGIN{IGNORECASE=1} $1!~/^#/ && tolower($2)==tolower(t){found=1} END{exit !found}' "$ROSTER"; then
+    die "$tag is already on the roster"
+  fi
+  printf '%-8s %-18s # %s\n' "$platform" "$tag" "${note:-added via admin}" >> "$ROSTER"
+  audit "players.add $platform $tag"
+  verb_players_sync
+}
+
+verb_players_remove() {
+  local tag=${1:?tag}
+  valid_tag "$tag" || die "invalid gamertag"
+  [ -f "$ROSTER" ] || die "no roster"
+  awk -v t="$tag" '$1~/^#/ || tolower($2)!=tolower(t)' "$ROSTER" > "$ROSTER.tmp" || die "rewrite failed"
+  mv "$ROSTER.tmp" "$ROSTER"
+  audit "players.remove $tag"
+  verb_players_sync
+}
+
+verb_players_sync() {
+  running || die "the server is not running, so the whitelist cannot be changed"
+  ROSTER="$ROSTER" /usr/local/sbin/marnar-mc-sync-players
+  audit "players.sync"
+}
+
+verb_players_kick() {
+  local tag=${1:?tag}
+  valid_tag "$tag" || die "invalid gamertag"
+  running || die "server not running"
+  rcon "kick $tag Te desconecto el administrador"
+  audit "players.kick $tag"
+}
+
+verb_audit() {
+  # Newest first, capped — this is a UI panel, not a log archive.
+  [ -f "$AUDIT" ] && tail -200 "$AUDIT" | tac || true
+}
+
+# ---------------------------------------------------------------------------
+# world
+# ---------------------------------------------------------------------------
+verb_world_info() {
+  local seed="" border="" mb backups
+  if running; then
+    seed=$(rcon "seed" 2>/dev/null | grep -o '\-\?[0-9]\{5,\}' | head -1)
+    border=$(rcon "worldborder get" 2>/dev/null | grep -o '[0-9]\+' | head -1)
+  fi
+  mb=$(du -sm "$WORLD" 2>/dev/null | cut -f1)
+  backups=$(ls -1 "$BACKUPS"/daily/world-*.tar.zst 2>/dev/null | wc -l)
+  cat <<EOF
+{"seed":$(jstr "${seed:-}"),"border":$(jstr "${border:-}"),"world_mb":${mb:-0},
+ "backup_count":${backups:-0},"level_name":"world"}
+EOF
+}
+
+verb_backups_list() {
+  echo '{"backups":['
+  local first=1 f
+  for f in $(ls -1t "$BACKUPS"/daily/world-*.tar.zst "$BACKUPS"/weekly/world-*.tar.zst 2>/dev/null); do
+    [ $first -eq 1 ] || echo ','
+    first=0
+    printf '{"path":%s,"name":%s,"bytes":%s,"mtime":%s,"kind":%s}' \
+      "$(jstr "$f")" "$(jstr "$(basename "$f")")" \
+      "$(stat -c %s "$f")" "$(stat -c %Y "$f")" \
+      "$(jstr "$(basename "$(dirname "$f")")")"
+  done
+  echo ']}'
+}
+
+verb_backup_now() {
+  audit "backup.now"
+  /usr/local/sbin/marnar-mc-backup
+}
+
+# Every destructive verb funnels through this. The UI only asks for one
+# confirmation — that was a deliberate choice to keep it usable — so the safety
+# net is here instead, where a tired operator cannot skip it: take a fresh
+# backup, and move the old world aside rather than deleting it. Disk is cheaper
+# than a world nobody can get back.
+preserve_current_world() {
+  local reason=$1 stamp
+  stamp=$(date +%Y%m%d-%H%M%S)
+  echo "==> taking a safety backup before $reason"
+  if ! /usr/local/sbin/marnar-mc-backup; then
+    die "the safety backup failed — refusing to $reason. Fix the backup first."
+  fi
+  echo "==> stopping the server"
+  $COMPOSE stop minecraft
+  if [ -d "$WORLD" ]; then
+    echo "==> preserving the current world as world.replaced-$stamp"
+    mv "$WORLD" "$DATA/world.replaced-$stamp" || die "could not move the old world aside"
+    echo "    (delete it by hand once you are happy: $DATA/world.replaced-$stamp)"
+  fi
+}
+
+# Bring the server up and wait for it to actually finish loading. "docker
+# compose up" returning is not the same as the server being ready, and every
+# command that follows (borders, chunky) fails confusingly if issued too early.
+wait_for_ready() {
+  echo "==> starting the server"
+  $COMPOSE up -d minecraft >/dev/null 2>&1
+  local i
+  for i in $(seq 1 90); do
+    if docker logs minecraft 2>&1 | tail -50 | grep -q 'Done ([0-9.]*s)!'; then
+      echo "==> server is up"
+      return 0
+    fi
+    sleep 10
+  done
+  die "the server did not finish starting within 15 minutes"
+}
+
+# Nether coordinates are 1:8, so the Nether border must be the overworld border
+# divided by 8. Get this wrong and a player walks through a portal and lands
+# outside the border, which is both confusing and unfixable from inside the
+# game.
+apply_borders() {
+  local size=${1:-3000}
+  echo "==> setting world borders (overworld/end $size, nether $((size / 8)))"
+  rcon "worldborder set $size" >/dev/null
+  rcon "execute in minecraft:the_nether run worldborder set $((size / 8))" >/dev/null 2>&1
+  rcon "execute in minecraft:the_end run worldborder set $size" >/dev/null 2>&1
+}
+
+pregenerate() {
+  local size=${1:-3000} half=$(( ${1:-3000} / 2 ))
+  echo "==> pre-generating chunks — this is the slow part, roughly 45 minutes"
+  rcon "chunky world minecraft:overworld" >/dev/null
+  rcon "chunky center 0 0" >/dev/null
+  rcon "chunky radius $half" >/dev/null
+  rcon "chunky start" >/dev/null
+  # Chunky reports progress every 120s and prints this line once per world when
+  # it is done. Polling faster than that interval looks like a stall; it is not.
+  local i
+  for i in $(seq 1 720); do
+    docker logs minecraft 2>&1 | tail -100 | grep -q "Task finished for world" && break
+    sleep 10
+  done
+  echo "==> overworld done"
+  apply_borders "$size"
+}
+
+verb_world_regenerate() {
+  local seed=${1:-} size=${2:-3000}
+  case "$size" in ''|*[!0-9]*) die "size must be a number" ;; esac
+  [ "$size" -ge 500 ] && [ "$size" -le 20000 ] || die "size must be between 500 and 20000"
+  case "$seed" in ''|-*[!0-9]*|*[!0-9-]*) [ -z "$seed" ] || die "seed must be a number" ;; esac
+
+  audit "world.regenerate seed=${seed:-random} size=$size"
+  preserve_current_world "regenerate the world"
+
+  # itzg only writes level-seed into server.properties from $SEED, so the seed
+  # has to go through the compose environment, not into the file directly —
+  # anything written to server.properties by hand is overwritten at next start.
+  echo "==> setting seed to ${seed:-random}"
+  local env=$STACK/.env
+  touch "$env"
+  sed -i '/^MC_SEED=/d' "$env"
+  echo "MC_SEED=$seed" >> "$env"
+
+  wait_for_ready
+  pregenerate "$size"
+  echo "==> done. New world generated with seed ${seed:-random}, border $size."
+  audit "world.regenerate complete"
+}
+
+verb_world_import() {
+  local archive=${1:?archive}
+  # Path is confined to the upload directory; the agent writes uploads there and
+  # nowhere else. Without this, "import" is an arbitrary-file-read-and-extract
+  # primitive running as root.
+  case "$archive" in
+    */*|*..*) die "archive must be a bare filename in the upload directory" ;;
+  esac
+  local src=/var/lib/marnar-mc-admin/uploads/$archive
+  [ -f "$src" ] || die "no such upload: $archive"
+
+  audit "world.import $archive"
+  preserve_current_world "import a world"
+
+  echo "==> extracting $archive"
+  mkdir -p "$WORLD"
+  case "$archive" in
+    *.tar.zst) tar --use-compress-program=unzstd -C "$WORLD" -xf "$src" ;;
+    *.tar.gz|*.tgz) tar -C "$WORLD" -xzf "$src" ;;
+    *.zip) unzip -q -d "$WORLD" "$src" ;;
+    *) die "unsupported archive type" ;;
+  esac || die "extraction failed — the old world is still at $DATA/world.replaced-*"
+
+  # People zip worlds inconsistently: sometimes level.dat is at the root,
+  # sometimes it is one directory down. Handle the common case rather than
+  # failing with "no level.dat" on a perfectly good archive.
+  if [ ! -f "$WORLD/level.dat" ]; then
+    local inner
+    inner=$(find "$WORLD" -maxdepth 2 -name level.dat -printf '%h\n' 2>/dev/null | head -1)
+    [ -n "$inner" ] || die "no level.dat anywhere in the archive — is this a Minecraft world?"
+    echo "==> world was nested in $(basename "$inner"), flattening"
+    mv "$inner"/* "$WORLD"/ 2>/dev/null
+  fi
+
+  chown -R 1000:1000 "$WORLD"
+  wait_for_ready
+  echo "==> imported. Check the world in game before deleting $DATA/world.replaced-*"
+  audit "world.import complete"
+}
+
+verb_world_restore() {
+  local name=${1:?backup name}
+  case "$name" in */*|*..*) die "backup must be a bare filename" ;; esac
+  local src
+  src=$(ls -1 "$BACKUPS"/daily/"$name" "$BACKUPS"/weekly/"$name" 2>/dev/null | head -1)
+  [ -n "$src" ] && [ -f "$src" ] || die "no such backup: $name"
+
+  audit "world.restore $name"
+  preserve_current_world "restore $name"
+  echo "==> restoring $name"
+  mkdir -p "$WORLD"
+  tar --use-compress-program=unzstd -C "$DATA" -xf "$src" \
+    || die "restore failed — the previous world is still at $DATA/world.replaced-*"
+  chown -R 1000:1000 "$DATA"
+  wait_for_ready
+  echo "==> restored from $name"
+  audit "world.restore complete"
+}
+
+verb_server_restart() {
+  audit "server.restart"
+  /usr/local/sbin/marnar-mc-restart
+}
+
+verb_logs() {
+  docker logs --tail "${1:-120}" minecraft 2>&1
+}
+
+# ---------------------------------------------------------------------------
+case "${1:-}" in
+  status)            verb_status ;;
+  players-list)      verb_players_list ;;
+  players-add)       shift; verb_players_add "$@" ;;
+  players-remove)    shift; verb_players_remove "$@" ;;
+  players-sync)      verb_players_sync ;;
+  players-kick)      shift; verb_players_kick "$@" ;;
+  audit)             verb_audit ;;
+  world-info)        verb_world_info ;;
+  backups-list)      verb_backups_list ;;
+  backup-now)        verb_backup_now ;;
+  world-regenerate)  shift; verb_world_regenerate "$@" ;;
+  world-import)      shift; verb_world_import "$@" ;;
+  world-restore)     shift; verb_world_restore "$@" ;;
+  server-restart)    verb_server_restart ;;
+  logs)              shift; verb_logs "$@" ;;
+  *) die "unknown verb: ${1:-<none>}" ;;
+esac

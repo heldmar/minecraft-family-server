@@ -1,0 +1,20 @@
+# /etc/sudoers.d/mcadmin — installed with mode 0440, root:root.
+#
+# This single line is the privilege boundary for the whole admin UI. The agent
+# runs as an unprivileged user that is deliberately NOT in the docker group
+# (docker group membership is root-equivalent on this host, and this box also
+# serves two other live sites).
+#
+# ⚠️ Do not widen this. The obvious "simplification" is to allow `docker` so the
+# agent can call rcon-cli directly. That is not a simplification, it is handing
+# over the machine: `docker exec` into any container, or `docker run -v /:/host`,
+# is a root shell on the host. The indirection through marnar-mc-adminctl exists
+# precisely so the list of possible actions is finite and reviewable.
+#
+# NOPASSWD is required — there is no TTY to type a password into.
+mcadmin ALL=(root) NOPASSWD: /usr/local/sbin/marnar-mc-adminctl
+
+# Keep the agent's actor hint across the sudo boundary so adminctl can write it
+# into the audit log. It is a label for the record, never used to authorise.
+Defaults:mcadmin env_keep += "MCADMIN_ACTOR"
+Defaults:mcadmin !requiretty

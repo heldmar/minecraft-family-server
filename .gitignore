@@ -22,3 +22,7 @@ cache/
 # macOS
 .DS_Store
 stacks/*/data/
+
+# Python bytecode from local syntax checks
+__pycache__/
+*.pyc
