@@ -21,3 +21,4 @@ cache/
 
 # macOS
 .DS_Store
+stacks/*/data/

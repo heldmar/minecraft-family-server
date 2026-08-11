@@ -1,0 +1,114 @@
+# MarNar Minecraft — Paper + Geyser + Floodgate
+#
+# Deployed CLI-first to /home/mcadmin/stacks/minecraft/ on the server, per its
+# own rules. Portainer there is a viewer, not a deploy path.
+#
+# Requirement references are to docs/REQUIREMENTS.md.
+
+services:
+  minecraft:
+    # O-3: pinned by digest, never :latest. This is the `java25` index digest; it
+    # resolves to arm64 manifest sha256:258e65f3831cdbaf0b2cd9af1b2aab87df99af59465d8543b12d4a7926fffac1
+    #
+    # ⚠️ The JRE tag is coupled to VERSION below: Minecraft 26.1 and newer refuse
+    # to start on anything older than Java 25. `java21` fails at launch with a
+    # one-line message and a restart loop. Bump both together, never one alone.
+    image: itzg/minecraft-server@sha256:23f417bcccfc5b96fad0c7898e1a9f6472a97d28450975a7c53a666722baeef3
+    container_name: minecraft
+    restart: unless-stopped            # O-6: always-on, survives host reboot
+    stdin_open: true
+    tty: true
+
+    ports:
+      - "25565:25565/tcp"              # N-6 Java Edition
+      - "19132:19132/udp"              # N-5 Bedrock via Geyser
+      # S-3: RCON (25575) is deliberately NOT published. It stays inside the
+      # container network and is reached with `docker exec ... rcon-cli`.
+
+    # P-1: hard ceiling, leaving headroom on a 5.6 GB box already running nine
+    # containers. P-3: the JVM must never swap; if it approaches this, that is
+    # an incident, not something to absorb.
+    mem_limit: 2048m
+    mem_reservation: 1536m
+
+    # P-8/S-4: this box hosts live third-party sites on ONE shared vCPU.
+    # Default weight is 1024; 512 means Minecraft yields to the other sites
+    # under contention rather than starving them. It costs nothing when the core
+    # is not saturated, and it is what makes chunk generation survivable.
+    cpu_shares: 512
+
+    # S-1: hardening, matching the standard already used on this box.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN                          # entrypoint fixes ownership of /data
+      - SETGID                         # then drops root to uid/gid 1000
+      - SETUID
+      - DAC_OVERRIDE
+      - FOWNER
+
+    volumes:
+      # :z relabels for SELinux, which is Enforcing on this host.
+      - ./data:/data:z
+
+    environment:
+      EULA: "TRUE"
+      TYPE: "PAPER"
+
+      # F-1e: latest Minecraft version fully supported by Geyser. Bedrock clients
+      # are force-updated by Mojang and cannot stay behind, so trailing the client
+      # breaks joins outright. Verified 2026-08-10: Geyser 2.11.1 lists 26.2.
+      VERSION: "26.2"
+
+      # P-2: fixed heap (equal min/max, no resize pauses) + Aikar's G1GC flags.
+      MEMORY: "1536M"
+      USE_AIKAR_FLAGS: "true"
+
+      # P-4: the main CPU lever after pre-generation.
+      VIEW_DISTANCE: "6"
+      SIMULATION_DISTANCE: "4"
+
+      # F-9: four concurrent players.
+      MAX_PLAYERS: "4"
+
+      # A-1/A-1a/A-2: closed to everyone until gamertags are supplied.
+      ENABLE_WHITELIST: "TRUE"
+      ENFORCE_WHITELIST: "TRUE"
+      ONLINE_MODE: "TRUE"
+
+      # A-7: not discoverable, and no query protocol.
+      ENABLE_QUERY: "false"
+
+      # F-1a / F-1c / F-1d
+      PVP: "false"
+      DIFFICULTY: "normal"
+      ALLOW_NETHER: "true"
+      MODE: "survival"
+      SPAWN_PROTECTION: "0"
+      MOTD: "MarNar - private server for MarNar and friends"
+
+      # S-3: strong password, injected from .env which is never committed.
+      ENABLE_RCON: "true"
+      RCON_PASSWORD: ${RCON_PASSWORD:?RCON_PASSWORD must be set in .env}
+
+      # Plugins. Geyser and Floodgate come from GeyserMC's own build server
+      # because the Paper/Spigot build is not published to Modrinth.
+      # O-2: these track the Bedrock client and are expected to need updating
+      # whenever Mojang ships a client update.
+      PLUGINS: >-
+        https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot,
+        https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/spigot
+      MODRINTH_PROJECTS: "chunky"      # P-6 pre-generation
+
+      TZ: "Etc/UTC"
+      UID: "1000"
+      GID: "1000"
+
+    healthcheck:
+      test: ["CMD", "mc-health"]
+      start_period: 5m
+      interval: 60s
+      timeout: 20s
+      retries: 3
