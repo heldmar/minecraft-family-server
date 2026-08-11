@@ -1,0 +1,101 @@
+#!/bin/bash
+# Sync the server's whitelist from players/allowlist.txt (F-10).
+#
+# The requirement is that adding or removing a player is a reviewed change in
+# the repo followed by a documented deploy step — not somebody typing into RCON
+# at 11pm. So this file is the source of truth and the server is the copy.
+#
+# Consequence worth stating plainly: this REMOVES anyone on the server who is
+# not in the file. That is the point — it is what makes the file authoritative
+# rather than merely advisory — but it means a hand-added player disappears at
+# the next sync. Run with --dry-run first if you are not sure what is on there.
+#
+# Bedrock and Java players are added by different commands. Floodgate's
+# `fwhitelist add` looks up the Xbox gamertag and stores the player with the
+# leading dot; plain `whitelist add` is for Java accounts. Using the wrong one
+# produces an entry that never matches anybody, and the player sees a generic
+# "not white-listed" kick with nothing in the log to explain it.
+set -uo pipefail
+
+ROSTER=${ROSTER:-$(dirname "$0")/../players/allowlist.txt}
+DRY=false
+[ "${1:-}" = "--dry-run" ] && DRY=true
+
+command -v docker >/dev/null || { echo "run this on the server, not locally"; exit 1; }
+[ -f "$ROSTER" ] || { echo "ERROR: roster not found at $ROSTER"; exit 1; }
+
+mc() {
+  if $DRY; then echo "  would run: $1"; else docker exec minecraft rcon-cli "$1"; fi
+}
+
+# --- read the roster --------------------------------------------------------
+declare -A WANT   # gamertag -> platform
+COUNT=0
+# ⚠️ Under `set -u`, bash treats an EMPTY associative array as unset, so both
+# ${#WANT[@]} and ${!WANT[@]} abort the script rather than yielding 0 and
+# nothing. The empty roster is not a corner case here — it is the state the
+# server was commissioned in — so COUNT is tracked separately and every
+# expansion of WANT is gated behind it.
+#
+# The tempting one-liner `${!WANT[@]+"${!WANT[@]}"}` does NOT work: bash parses
+# `!WANT[@]+...` as indirect expansion, so it fails the moment the array is
+# non-empty with "invalid variable name" — i.e. it looks correct in exactly the
+# case you test first.
+while read -r platform tag _rest; do
+  [ -z "${platform:-}" ] && continue
+  case "$platform" in \#*) continue ;; esac
+  tag=${tag%\"}; tag=${tag#\"}
+  case "$platform" in
+    bedrock|java) WANT["$tag"]=$platform; COUNT=$((COUNT + 1)) ;;
+    *) echo "ERROR: line has platform '$platform', expected bedrock or java: $platform $tag"; exit 1 ;;
+  esac
+done < <(sed 's/#.*$//' "$ROSTER")
+
+echo "roster: $COUNT player(s)"
+
+# --- read what the server currently has -------------------------------------
+# whitelist.json is the reliable source; the `whitelist list` command's output
+# is formatted for humans and changes between versions.
+CURRENT=$(docker exec minecraft cat /data/whitelist.json 2>/dev/null \
+          | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' \
+          | sed 's/.*"\([^"]*\)"$/\1/')
+
+echo "server:  $(echo "$CURRENT" | grep -c . ) player(s)"
+
+# --- add what is missing ----------------------------------------------------
+if [ "$COUNT" -gt 0 ]; then
+  for tag in "${!WANT[@]}"; do
+    # Bedrock players are stored with a leading dot, so compare both forms.
+    if echo "$CURRENT" | grep -qxF "$tag" || echo "$CURRENT" | grep -qxF ".$tag"; then
+      continue
+    fi
+    if [ "${WANT[$tag]}" = "bedrock" ]; then
+      echo "+ $tag (bedrock)"
+      mc "fwhitelist add $tag"
+    else
+      echo "+ $tag (java)"
+      mc "whitelist add $tag"
+    fi
+  done
+fi
+
+# --- remove what is not in the roster ---------------------------------------
+while read -r name; do
+  [ -z "$name" ] && continue
+  bare=${name#.}
+  [ -n "${WANT[$bare]:-}" ] && continue
+  [ -n "${WANT[$name]:-}" ] && continue
+  echo "- $name (not in roster)"
+  mc "whitelist remove $name"
+  # Removing from the whitelist does not disconnect someone already playing.
+  mc "kick $name Ya no estas en la lista del servidor"
+done <<< "$CURRENT"
+
+if $DRY; then
+  echo "dry run — nothing changed"
+  exit 0
+fi
+
+mc "whitelist reload" >/dev/null
+echo "--- server now allows ---"
+docker exec minecraft rcon-cli "whitelist list"

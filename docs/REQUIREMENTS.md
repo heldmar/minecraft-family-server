@@ -144,7 +144,7 @@ this is the lever to revisit, with a boot-volume backup taken first.
 | **F-7** | Java clients SHOULD connect by hostname alone, with no port — via an SRV record. |
 | **F-8** | ~~Bedrock clients SHOULD connect by hostname alone, by using the default Bedrock port 19132.~~ **NOT MET — deliberately traded away, 2026-08-10.** BedrockConnect must own 19132 (see N-11a), so Geyser was moved to **19133** and direct-connect Bedrock clients must type the port explicitly. This costs nothing on PS5, which reaches the server through the BedrockConnect menu and never types an address; it costs one extra field on iPad and Bedrock PC. PS5 is the stated primary objective, so the SHOULD yields to it. |
 | **F-9** | **4 concurrent players** at acceptable performance (§6). |
-| **F-10** | An operator SHALL add or remove an approved player by editing a file in this repo and running a documented deploy step — never ad-hoc on the box. |
+| **F-10** | An operator SHALL add or remove an approved player by editing a file in this repo and running a documented deploy step — never ad-hoc on the box. **Met 2026-08-10**: `players/allowlist.txt` is the source of truth, `scripts/marnar-mc-sync-players` applies it, and the sync removes anyone on the server who is not in the file — which is what makes the file authoritative rather than advisory. Handles the Bedrock/Java split (`fwhitelist` vs `whitelist`) and has a `--dry-run`. |
 | **F-11** | The world SHALL be backed up automatically, with restore documented and tested. |
 
 ---

@@ -62,22 +62,40 @@ The allowlist is **on and enforced**, and was deliberately commissioned
 **empty** — nobody can join until added, including MarNar. This is the intended
 state, not a misconfiguration.
 
+The roster is **`players/allowlist.txt` in this repo**, and the server is a copy
+of it. Edit the file, commit, deploy:
+
 ```bash
-ssh mcserver 'docker exec minecraft rcon-cli "whitelist add <GamerTag>"'
-ssh mcserver 'docker exec minecraft rcon-cli "whitelist list"'
+# 1. edit players/allowlist.txt, one line per player:
+#      bedrock  TheirXboxGamertag   # Who they are — PS5
+#      java     TheirMinecraftName  # Who they are — PC
+
+# 2. commit it (this is the audit trail — that is the point of F-10)
+git commit -am "Add <name> to the allowlist"
+
+# 3. deploy
+scp players/allowlist.txt mcserver:/home/mcadmin/stacks/minecraft/roster/allowlist.txt
+ssh mcserver 'sudo ROSTER=/home/mcadmin/stacks/minecraft/roster/allowlist.txt \
+  /usr/local/sbin/marnar-mc-sync-players --dry-run'   # check, then drop --dry-run
 ```
 
-Bedrock players (PS5, iPad) are added by their **Xbox/Microsoft gamertag**, not
-a PlayStation name. Floodgate prefixes them with `.` in-game; do **not** type
-the dot when adding them.
+Removing someone is the same flow: delete their line and sync. The sync removes
+anyone on the server who is not in the file, and kicks them if they are online.
 
-Removing someone: `whitelist remove <GamerTag>`. That stops them joining but
-does not disconnect them if they are already on — follow with
-`kick <GamerTag>`.
+Two things to get right, both of which fail the same confusing way — a generic
+"not white-listed" kick with nothing useful in the log:
 
-⚠️ `whitelist.json` lives in `data/`, which is gitignored. F-10 wants the roster
-to be a reviewed file in the repo rather than ad-hoc RCON. That is not built
-yet — see the open items at the end.
+- **Bedrock players need their Xbox/Microsoft gamertag**, not their PlayStation
+  name. These are usually different and only the Xbox one works.
+- **The platform column matters.** `bedrock` uses Floodgate's `fwhitelist`,
+  `java` uses plain `whitelist`. The wrong one creates an entry that never
+  matches anybody.
+
+Do not type the leading dot Bedrock players show with in-game (`.MarNar`) —
+Floodgate adds it, and the sync compares both forms.
+
+⚠️ Because the file is authoritative, anyone added by hand over RCON is removed
+at the next sync. That is intended. `--dry-run` shows exactly what would change.
 
 ---
 
@@ -241,8 +259,6 @@ per `docker exec`.
 
 ## 9. Known open items
 
-- **F-10 is only half met.** The roster is managed by RCON, not by a reviewed
-  file in the repo. `whitelist.json` is gitignored.
 - **The PS5 path has not been tested on an actual PS5.** Every component is
   verified independently — DNS answers, BedrockConnect answers on 19132, Geyser
   answers on 19133 — but nobody has walked a console through it. In particular,

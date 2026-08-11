@@ -1,0 +1,33 @@
+# MarNar Minecraft — who is allowed on the server (F-10, A-1)
+#
+# THIS FILE IS THE ROSTER. The server's whitelist.json is generated from it by
+# `scripts/marnar-mc-sync-players`. Edit here, commit, run the sync — do not add
+# people over RCON, or the next sync will remove them again.
+#
+# Format, one player per line, whitespace-separated:
+#
+#     <platform>  <gamertag>  # who this is
+#
+# platform is `bedrock` or `java`:
+#
+#   bedrock  PS5, iPad, iPhone, Android, Switch, Xbox, and the Bedrock version
+#            of Minecraft on Windows. This is almost everyone here. Use the
+#            player's XBOX / MICROSOFT gamertag, not their PlayStation name —
+#            those are usually different and only the Xbox one works.
+#
+#   java     Minecraft Java Edition on a computer. Use the Minecraft username.
+#
+# Gamertags with spaces go in "double quotes".
+#
+# ⚠️ Do NOT type the leading dot that Bedrock players show with in-game (`.MarNar`).
+# Floodgate adds it. Type the gamertag exactly as it appears in their Minecraft
+# profile, with the same capitalisation.
+#
+# ---------------------------------------------------------------------------
+# The list is intentionally EMPTY. The server was commissioned with the
+# allowlist on and enforced and nobody on it — including MarNar — so that it could
+# be exposed to the internet before anyone was invited, without a window where
+# it was reachable and open. Add people here when you have their gamertags.
+# ---------------------------------------------------------------------------
+
+# bedrock  ExampleGamerTag   # MarNar — PS5
