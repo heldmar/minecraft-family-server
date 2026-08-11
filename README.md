@@ -58,7 +58,20 @@ restore backups, import or regenerate the world. Authentication is an NPM Access
 List; there is no user database, by decision. See [`admin/`](admin/README.md).
 
 ✅ Live since 2026-08-11 — NPM proxy host id 8, Access List 1, 401 to anyone
-without the credential.
+without the credential. Bilingual **ES / EN**, and written for its actual reader:
+MarNar, who is 12. Every section carries an expandable *"¿Qué es esto?"* meant to
+teach the concept, not label the button. See
+[`docs/REQUIREMENTS-ADMIN-R2.md`](docs/REQUIREMENTS-ADMIN-R2.md).
+
+> ⚠️ **Backups do not run on a schedule.** Since 2026-08-11 a copy is made only
+> when the button is pressed, and automatically just before anything destructive.
+> The timer is disabled on purpose — do not re-enable it without asking. Offsite
+> copies to S3 are decided but deferred (O-4a).
+
+> ⚠️ **This repository is load-bearing for disaster recovery.** The four stacks
+> live *here only* — they are deliberately not mirrored into another
+> repo, so that two copies cannot drift apart. The server cannot be rebuilt from
+> the host's own repo alone; whoever rebuilds it has to pull the stacks from here.
 
 ## Why not the Pi
 

@@ -8,6 +8,7 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%23866043'/><rect width='16' height='6' fill='%235D9C3C'/></svg>">
 <link rel="stylesheet" href="/styles.css">
 <script src="/config.js"></script>
+<script src="/i18n.js"></script>
 </head>
 <body>
 
@@ -31,25 +32,29 @@
     </svg>
     <div class="brand-text">
       <span class="brand-name">MarNar's</span>
-      <span class="brand-sub">Minecraft Server</span>
+      <span class="brand-sub" data-i18n="brand.sub"></span>
     </div>
   </div>
 
   <nav class="nav">
     <button class="nav-item is-active" data-view="players">
-      <span class="nav-ico">🎮</span> Jugadores
+      <span class="nav-ico">🎮</span> <span data-i18n="nav.players"></span>
     </button>
     <button class="nav-item" data-view="world">
-      <span class="nav-ico">🌍</span> Mundo
+      <span class="nav-ico">🌍</span> <span data-i18n="nav.world"></span>
     </button>
     <button class="nav-item" data-view="activity">
-      <span class="nav-ico">📜</span> Actividad
+      <span class="nav-ico">📜</span> <span data-i18n="nav.activity"></span>
     </button>
   </nav>
 
   <div class="sidebar-foot">
-    <div class="pill" id="side-status"><span class="dot"></span><span>Conectando…</span></div>
-    <button class="btn btn-ghost btn-sm" id="btn-restart">Reiniciar servidor</button>
+    <div class="pill" id="side-status"><span class="dot"></span><span data-i18n="side.connecting"></span></div>
+    <button class="btn btn-ghost btn-sm" id="btn-restart" data-i18n="btn.restart"></button>
+    <details class="help help-tight">
+      <summary data-i18n="help.open"></summary>
+      <p data-i18n="help.restart"></p>
+    </details>
   </div>
 </aside>
 
@@ -57,14 +62,21 @@
 
   <header class="topbar">
     <div>
-      <h1 id="view-title">Jugadores</h1>
-      <p class="muted" id="view-sub">Quién puede entrar al servidor</p>
+      <h1 id="view-title"></h1>
+      <p class="muted" id="view-sub"></p>
     </div>
     <div class="topbar-right">
-      <div class="stat-mini"><b id="hdr-players">–</b><span>en línea</span></div>
-      <div class="stat-mini"><b id="hdr-tps">–</b><span>TPS</span></div>
-      <div class="stat-mini"><b id="hdr-version">–</b><span>versión</span></div>
-      <button class="btn btn-ghost btn-sm" id="btn-refresh" title="Actualizar">↻</button>
+      <div class="stat-mini"><b id="hdr-players">–</b><span data-i18n="hdr.online"></span></div>
+      <div class="stat-mini"><b id="hdr-tps">–</b><span data-i18n="hdr.tps"></span></div>
+      <div class="stat-mini"><b id="hdr-version">–</b><span data-i18n="hdr.version"></span></div>
+
+      <!-- Language switch (A-2): on every screen, no menu to open. -->
+      <div class="langswitch" id="langswitch" role="group" aria-label="Language">
+        <button class="lang-btn" data-lang="es">ES</button>
+        <button class="lang-btn" data-lang="en">EN</button>
+      </div>
+
+      <button class="btn btn-ghost btn-sm" id="btn-refresh" data-i18n-title="btn.refresh">↻</button>
     </div>
   </header>
 
@@ -73,66 +85,75 @@
 
     <div class="cards">
       <div class="card stat" data-accent="grass">
-        <span class="stat-label">En la lista</span>
+        <span class="stat-label" data-i18n="players.rosterLabel"></span>
         <b class="stat-value" id="st-roster">–</b>
-        <span class="stat-foot">jugadores permitidos</span>
+        <span class="stat-foot" data-i18n="players.rosterFoot"></span>
+        <details class="help"><summary data-i18n="help.open"></summary><p data-i18n="help.roster"></p></details>
       </div>
       <div class="card stat" data-accent="diamond">
-        <span class="stat-label">Jugando ahora</span>
+        <span class="stat-label" data-i18n="players.onlineLabel"></span>
         <b class="stat-value" id="st-online">–</b>
-        <span class="stat-foot">de <span id="st-max">4</span> lugares</span>
+        <span class="stat-foot" id="st-online-foot"></span>
+        <details class="help"><summary data-i18n="help.open"></summary><p data-i18n="help.online"></p></details>
       </div>
       <div class="card stat" data-accent="gold">
-        <span class="stat-label">Rendimiento</span>
+        <span class="stat-label" data-i18n="players.tpsLabel"></span>
         <b class="stat-value" id="st-tps">–</b>
-        <span class="stat-foot">TPS (20 es perfecto)</span>
+        <span class="stat-foot" data-i18n="players.tpsFoot"></span>
+        <details class="help"><summary data-i18n="help.open"></summary><p data-i18n="help.tps"></p></details>
       </div>
       <div class="card stat" data-accent="redstone">
-        <span class="stat-label">Ruta PS5</span>
+        <span class="stat-label" data-i18n="players.pathLabel"></span>
         <b class="stat-value" id="st-path">–</b>
-        <span class="stat-foot">DNS + BedrockConnect</span>
+        <span class="stat-foot" data-i18n="players.pathFoot"></span>
+        <details class="help"><summary data-i18n="help.open"></summary><p data-i18n="help.ps5"></p></details>
       </div>
     </div>
 
     <div class="split">
       <div class="card">
         <div class="card-head">
-          <h2>Lista de permitidos</h2>
-          <button class="btn btn-ghost btn-sm" id="btn-sync">Sincronizar</button>
+          <h2 data-i18n="players.listTitle"></h2>
+          <button class="btn btn-ghost btn-sm" id="btn-sync" data-i18n="players.sync"></button>
         </div>
+        <details class="help"><summary data-i18n="help.open"></summary><p data-i18n="help.sync"></p></details>
         <div class="table-wrap">
           <table id="players-table">
             <thead>
-              <tr><th>Gamertag</th><th>Plataforma</th><th>Quién es</th><th>Estado</th><th></th></tr>
+              <tr>
+                <th data-i18n="players.thTag"></th>
+                <th data-i18n="players.thPlatform"></th>
+                <th data-i18n="players.thWho"></th>
+                <th data-i18n="players.thState"></th>
+                <th></th>
+              </tr>
             </thead>
-            <tbody><tr><td colspan="5" class="empty">Cargando…</td></tr></tbody>
+            <tbody><tr><td colspan="5" class="empty" data-i18n="players.loading"></td></tr></tbody>
           </table>
         </div>
       </div>
 
       <div class="card">
-        <div class="card-head"><h2>Agregar jugador</h2></div>
+        <div class="card-head"><h2 data-i18n="players.addTitle"></h2></div>
         <form id="add-form" class="form">
-          <label>Plataforma
+          <label><span data-i18n="players.platform"></span>
             <select name="platform" required>
-              <option value="bedrock">Bedrock — PS5, iPad, Switch, móvil</option>
-              <option value="java">Java — PC</option>
+              <option value="bedrock" data-i18n="players.platformBedrock"></option>
+              <option value="java" data-i18n="players.platformJava"></option>
             </select>
           </label>
-          <label>Gamertag
-            <input name="tag" required autocomplete="off" placeholder="p. ej. MarNarCraft99">
+          <details class="help"><summary data-i18n="help.open"></summary><p data-i18n="help.platform"></p></details>
+
+          <label><span data-i18n="players.tag"></span>
+            <input name="tag" required autocomplete="off" data-i18n-ph="players.tagPh">
           </label>
-          <label>Quién es
-            <input name="note" autocomplete="off" placeholder="p. ej. MarNar — PS5">
+          <label><span data-i18n="players.note"></span>
+            <input name="note" autocomplete="off" data-i18n-ph="players.notePh">
           </label>
 
-          <div class="hint">
-            <b>⚠️ Para PS5, iPad y Switch hace falta el gamertag de Xbox / Microsoft</b>,
-            no el nombre de PlayStation. Suelen ser distintos y solo funciona el de Xbox.
-            No escribas el punto que aparece adelante en el juego — lo agrega Floodgate.
-          </div>
+          <div class="hint" data-i18n="players.hint"></div>
 
-          <button class="btn btn-primary" type="submit">Agregar y sincronizar</button>
+          <button class="btn btn-primary" type="submit" data-i18n="players.submit"></button>
         </form>
       </div>
     </div>
@@ -143,73 +164,84 @@
 
     <div class="cards">
       <div class="card stat" data-accent="grass">
-        <span class="stat-label">Semilla</span>
+        <span class="stat-label" data-i18n="world.seedLabel"></span>
         <b class="stat-value mono sm" id="w-seed">–</b>
-        <span class="stat-foot">seed del mundo</span>
+        <span class="stat-foot" data-i18n="world.seedFoot"></span>
+        <details class="help"><summary data-i18n="help.open"></summary><p data-i18n="help.seed"></p></details>
       </div>
       <div class="card stat" data-accent="diamond">
-        <span class="stat-label">Borde</span>
+        <span class="stat-label" data-i18n="world.borderLabel"></span>
         <b class="stat-value" id="w-border">–</b>
-        <span class="stat-foot">bloques de ancho</span>
+        <span class="stat-foot" data-i18n="world.borderFoot"></span>
+        <details class="help"><summary data-i18n="help.open"></summary><p data-i18n="help.border"></p></details>
       </div>
       <div class="card stat" data-accent="gold">
-        <span class="stat-label">Tamaño</span>
+        <span class="stat-label" data-i18n="world.sizeLabel"></span>
         <b class="stat-value" id="w-size">–</b>
-        <span class="stat-foot">en disco</span>
+        <span class="stat-foot" data-i18n="world.sizeFoot"></span>
+        <details class="help"><summary data-i18n="help.open"></summary><p data-i18n="help.size"></p></details>
       </div>
       <div class="card stat" data-accent="redstone">
-        <span class="stat-label">Respaldos</span>
+        <span class="stat-label" data-i18n="world.backupsLabel"></span>
         <b class="stat-value" id="w-backups">–</b>
-        <span class="stat-foot">copias guardadas</span>
+        <span class="stat-foot" data-i18n="world.backupsFoot"></span>
+        <details class="help"><summary data-i18n="help.open"></summary><p data-i18n="help.backups"></p></details>
       </div>
     </div>
 
     <div class="split">
       <div class="card">
         <div class="card-head">
-          <h2>Respaldos</h2>
-          <button class="btn btn-ghost btn-sm" id="btn-backup">Respaldar ahora</button>
+          <h2 data-i18n="world.backupsTitle"></h2>
+          <button class="btn btn-ghost btn-sm" id="btn-backup" data-i18n="world.backupNow"></button>
         </div>
+
+        <!-- C-4: the panel must never imply backups happen on their own. -->
+        <div class="notice" data-i18n="world.notAuto"></div>
+        <p class="muted sm" id="backup-disk"></p>
+        <details class="help"><summary data-i18n="help.open"></summary><p data-i18n="help.disk"></p></details>
+
         <div class="table-wrap tall">
           <table id="backups-table">
-            <thead><tr><th>Archivo</th><th>Cuándo</th><th>Tamaño</th><th></th></tr></thead>
-            <tbody><tr><td colspan="4" class="empty">Cargando…</td></tr></tbody>
+            <thead><tr>
+              <th data-i18n="world.thFile"></th>
+              <th data-i18n="world.thWhen"></th>
+              <th data-i18n="world.thSize"></th>
+              <th></th>
+            </tr></thead>
+            <tbody><tr><td colspan="4" class="empty" data-i18n="players.loading"></td></tr></tbody>
           </table>
         </div>
       </div>
 
       <div class="stack">
         <div class="card">
-          <div class="card-head"><h2>Importar un mundo</h2></div>
+          <div class="card-head"><h2 data-i18n="world.importTitle"></h2></div>
+          <details class="help"><summary data-i18n="help.open"></summary><p data-i18n="help.import"></p></details>
           <form id="import-form" class="form">
-            <label>Archivo del mundo
+            <label><span data-i18n="world.importFile"></span>
               <input type="file" name="file" accept=".zip,.tar.gz,.tgz,.tar.zst" required>
             </label>
-            <div class="hint">
-              Se acepta <code>.zip</code>, <code>.tar.gz</code> o <code>.tar.zst</code>.
-              Adentro tiene que estar <code>level.dat</code> — es la carpeta del mundo,
-              no la carpeta del servidor entero.
-            </div>
+            <div class="hint" data-i18n="world.importHint"></div>
             <div class="progress is-hidden" id="upload-progress"><div></div></div>
-            <button class="btn btn-primary" type="submit">Subir e importar</button>
+            <button class="btn btn-primary" type="submit" data-i18n="world.importSubmit"></button>
           </form>
         </div>
 
         <div class="card card-danger">
-          <div class="card-head"><h2>⛏️ Generar un mundo nuevo</h2></div>
+          <div class="card-head"><h2 data-i18n="world.regenTitle"></h2></div>
+          <details class="help"><summary data-i18n="help.open"></summary><p data-i18n="help.regen"></p></details>
           <form id="regen-form" class="form">
-            <label>Semilla <span class="muted">(vacío = al azar)</span>
-              <input name="seed" inputmode="numeric" autocomplete="off" placeholder="al azar">
+            <label>
+              <span data-i18n="world.regenSeed"></span>
+              <span class="muted" data-i18n="world.regenSeedOpt"></span>
+              <input name="seed" inputmode="numeric" autocomplete="off" data-i18n-ph="world.regenSeedPh">
             </label>
-            <label>Ancho del borde
+            <label><span data-i18n="world.regenSize"></span>
               <input name="size" type="number" min="500" max="20000" step="100" value="3000">
             </label>
-            <div class="hint hint-danger">
-              Esto reemplaza el mundo actual y tarda <b>unos 45 minutos</b> pre-generando
-              los chunks. Antes de empezar se hace un respaldo y el mundo viejo se guarda
-              como <code>world.replaced-…</code> — nunca se borra.
-            </div>
-            <button class="btn btn-danger" type="submit">Generar mundo nuevo</button>
+            <div class="hint hint-danger" data-i18n="world.regenHint"></div>
+            <button class="btn btn-danger" type="submit" data-i18n="world.regenSubmit"></button>
           </form>
         </div>
       </div>
@@ -220,20 +252,26 @@
   <section class="view is-hidden" id="view-activity">
     <div class="split">
       <div class="card">
-        <div class="card-head"><h2>Qué se hizo</h2></div>
+        <div class="card-head"><h2 data-i18n="activity.auditTitle"></h2></div>
+        <details class="help"><summary data-i18n="help.open"></summary><p data-i18n="help.audit"></p></details>
         <div class="table-wrap tall">
           <table id="audit-table">
-            <thead><tr><th>Cuándo</th><th>Desde</th><th>Acción</th></tr></thead>
-            <tbody><tr><td colspan="3" class="empty">Cargando…</td></tr></tbody>
+            <thead><tr>
+              <th data-i18n="activity.thWhen"></th>
+              <th data-i18n="activity.thFrom"></th>
+              <th data-i18n="activity.thWhat"></th>
+            </tr></thead>
+            <tbody><tr><td colspan="3" class="empty" data-i18n="players.loading"></td></tr></tbody>
           </table>
         </div>
       </div>
       <div class="card">
         <div class="card-head">
-          <h2>Consola del servidor</h2>
-          <button class="btn btn-ghost btn-sm" id="btn-logs">Actualizar</button>
+          <h2 data-i18n="activity.consoleTitle"></h2>
+          <button class="btn btn-ghost btn-sm" id="btn-logs" data-i18n="activity.refresh"></button>
         </div>
-        <pre class="console" id="server-logs">Cargando…</pre>
+        <details class="help"><summary data-i18n="help.open"></summary><p data-i18n="help.console"></p></details>
+        <pre class="console" id="server-logs"></pre>
       </div>
     </div>
   </section>
@@ -244,23 +282,23 @@
 <div class="overlay is-hidden" id="job-overlay">
   <div class="job card">
     <div class="card-head">
-      <h2><span id="job-title">Trabajando…</span></h2>
-      <span class="pill" id="job-state"><span class="dot"></span><span>en curso</span></span>
+      <h2><span id="job-title"></span></h2>
+      <span class="pill" id="job-state"><span class="dot"></span><span></span></span>
     </div>
-    <p class="muted" id="job-note">Podés cerrar esta ventana, el trabajo sigue en el servidor.</p>
+    <p class="muted" id="job-note"></p>
     <pre class="console" id="job-log"></pre>
-    <button class="btn btn-ghost" id="job-close">Cerrar</button>
+    <button class="btn btn-ghost" id="job-close" data-i18n="job.close"></button>
   </div>
 </div>
 
 <!-- Confirm dialog -->
 <div class="overlay is-hidden" id="confirm-overlay">
   <div class="card confirm">
-    <h2 id="confirm-title">¿Seguro?</h2>
+    <h2 id="confirm-title"></h2>
     <p id="confirm-body"></p>
     <div class="confirm-actions">
-      <button class="btn btn-ghost" id="confirm-no">Cancelar</button>
-      <button class="btn btn-danger" id="confirm-yes">Sí, hacerlo</button>
+      <button class="btn btn-ghost" id="confirm-no" data-i18n="confirm.no"></button>
+      <button class="btn btn-danger" id="confirm-yes" data-i18n="confirm.yes"></button>
     </div>
   </div>
 </div>

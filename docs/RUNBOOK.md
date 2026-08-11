@@ -15,10 +15,10 @@ Requirement IDs refer to [REQUIREMENTS.md](REQUIREMENTS.md).
 | Stacks | `/home/mcadmin/stacks/{minecraft,bedrock-connect,mc-dns,mc-admin}/` |
 | World | `/home/mcadmin/stacks/minecraft/data/` |
 | Roster + audit log | `/home/mcadmin/stacks/minecraft/roster/` (**not** in Git — F-10a) |
-| Backups | `/home/mcadmin/backups/minecraft/{daily,weekly}/` |
+| Backups | `/home/mcadmin/backups/minecraft/{daily,weekly}/` — **on demand only**, see §5 |
 | Scripts | `/usr/local/sbin/marnar-mc-*` |
 | Admin UI | <https://minecraft-admin.example.net> · agent `marnar-mc-admin.service` |
-| Timers | `marnar-mc-backup.timer` (04:00), `marnar-mc-restart.timer` (05:00) |
+| Timers | `marnar-mc-restart.timer` (05:00). ⛔ `marnar-mc-backup.timer` is **disabled on purpose** — §5 |
 
 Three containers, and it is worth knowing which does what before touching any of
 them:
@@ -76,13 +76,24 @@ The allowlist is **on and enforced**, and was deliberately commissioned
 state, not a misconfiguration.
 
 **Normally you do this in the admin UI**: <https://minecraft-admin.example.net> →
-*Jugadores* → fill in platform, gamertag, who they are. It writes the roster,
-syncs the server and records the change in one step. Removing someone is the
-**Quitar** button on their row, which also kicks them if they are online.
+*Jugadores* / *Players* → fill in platform, gamertag, who they are. It writes the
+roster, syncs the server and records the change in one step. Removing someone is
+the **Quitar** / **Remove** button on their row, which also kicks them if they
+are online.
+
+> The panel is **bilingual** since 2026-08-11 (R2): the **ES / EN** switch is in
+> the top-right, and the choice is remembered per browser in `localStorage`
+> (`mcadmin.lang`), so screenshots and labels in these docs may be in either
+> language. Spanish is the fallback for anything untranslated. Every section
+> also has an expandable **"¿Qué es esto?" / "What is this?"** written for a
+> twelve-year-old — that is the intended audience for the whole panel now, so
+> **keep new copy plain and explain the concept, not the button**. See
+> [REQUIREMENTS-ADMIN-R2.md](REQUIREMENTS-ADMIN-R2.md).
 
 The roster is **`/home/mcadmin/stacks/minecraft/roster/allowlist.txt` on the
 server** — deliberately **not** in this repo. The repo is a generic server
-build; who plays is usage data (F-10a). It rides along in the nightly backup.
+build; who plays is usage data (F-10a). It rides along in the world backup —
+which, since 2026-08-11, only happens when someone asks for one (§5).
 
 By hand, if the UI is down:
 
@@ -208,10 +219,33 @@ el servidor. Los que juegan en la compu por Java pueden entrar igual."*
 
 ---
 
-## 5. Backups (O-4, O-5)
+## 5. Backups (~~O-4~~ superseded, O-5)
 
-Daily at 04:00, 14 dailies + 4 weeklies, Sunday's daily hard-linked as the
-weekly.
+> ⛔ **Backups do not run on a schedule.** `marnar-mc-backup.timer` is disabled
+> and stopped, on purpose, since 2026-08-11 (C-1). **Do not enable it** without
+> asking Helder — its absence is a decision, not drift, and the unit file was
+> kept only so re-arming is one command. The reason: *"I don't want backups to
+> be executed automatically yet, this will come when we set up S3 if we get to
+> that."*
+>
+> A copy is made in exactly two situations:
+>
+> 1. Someone presses **"Make a copy"** in the admin panel.
+> 2. Automatically, immediately before a destructive world operation —
+>    regenerate, import, restore — via `preserve_current_world`. This is the
+>    only reason those operations can be undone, and it is why turning the
+>    schedule off was safe.
+>
+> Retention is **3 dailies + 1 weekly** (was 14 + 4). On-demand copies are one
+> per press, not one per day, so a fortnight's worth was meaningless disk.
+>
+> ⚠️ **Every pre-existing archive was deleted on 2026-08-11 at Helder's
+> instruction** (566 MB freed). If nobody has pressed the button and nothing
+> destructive has run since, **there is no restore point** — check before
+> assuming there is one.
+
+Sunday's daily is still hard-linked as the weekly when a copy happens to land on
+a Sunday.
 
 ```bash
 # run one now

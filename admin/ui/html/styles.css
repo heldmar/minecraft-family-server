@@ -255,6 +255,75 @@ input[type=file] { padding: 8px; background: #F4F7F0; }
 }
 .hint-danger { background: #FDF1F1; border-left-color: var(--redstone); color: #7A3A3A; }
 
+/* ---------- "What is this?" explainers (B-2) ----------
+   Collapsed by default so the screen stays calm, and styled as an invitation
+   rather than as fine print — the whole point is that a twelve-year-old should
+   want to open one. The marker is a hand-rolled triangle because the native
+   one is inconsistent across the browsers this gets opened in (Safari on an
+   iPad, Chrome on a PC). */
+.help { margin: 8px 0 0; }
+.help > summary {
+  cursor: pointer; list-style: none;
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12.5px; font-weight: 600; color: var(--grass-dark);
+  padding: 3px 8px 3px 6px; border-radius: 8px;
+  user-select: none;
+}
+.help > summary::-webkit-details-marker { display: none; }
+.help > summary::before {
+  content: ""; width: 0; height: 0;
+  border: 5px solid transparent; border-left-color: currentColor;
+  transition: transform .15s ease;
+}
+.help[open] > summary::before { transform: rotate(90deg) translateX(-1px); }
+.help > summary:hover { background: #EAF2E2; }
+.help > p {
+  margin: 6px 0 0; font-size: 13px; line-height: 1.6;
+  color: #46523F; background: #F4F8EF;
+  border-left: 4px solid var(--grass-light);
+  padding: 10px 12px; border-radius: 0 8px 8px 0;
+}
+.help-tight > summary { color: var(--sidebar-ink); opacity: .75; }
+.help-tight > summary:hover { background: rgba(255,255,255,.08); }
+.help-tight > p { background: rgba(0,0,0,.25); color: var(--sidebar-ink); border-left-color: var(--grass); }
+
+/* Plain statement of fact, not a warning — used for "backups are not
+   automatic" (C-4), which the reader must not mistake for an error. */
+.notice {
+  font-size: 12.5px; line-height: 1.5;
+  background: #EEF6FA; border-left: 4px solid var(--diamond);
+  padding: 10px 12px; border-radius: 0 8px 8px 0;
+  color: #35525C; margin-bottom: 10px;
+}
+.sm { font-size: 12px; }
+
+/* ---------- language switch (A-2) ---------- */
+/* Sits above the job overlay (z 50) on purpose. That overlay is modal-looking
+   but not modal in spirit — it says "you can close this, the job keeps going" —
+   and a 45 minute world regeneration is exactly when someone is most likely to
+   want the other language. Without this the backdrop swallows the click and the
+   switch is dead for the length of the job.
+   It stays *below* the confirm overlay (z 80), which is deliberate: confirm text
+   is rendered once by confirmThen() rather than re-rendered on language change,
+   so switching under an open confirm would leave a stale sentence above a live
+   "yes" button. That dialog is a few seconds long; waiting is no hardship. */
+.langswitch {
+  position: relative; z-index: 70;
+  display: inline-flex; gap: 2px; padding: 2px;
+  background: #E6EDDD; border-radius: 10px;
+}
+.lang-btn {
+  border: 0; cursor: pointer; font: inherit;
+  font-size: 12px; font-weight: 700; letter-spacing: .04em;
+  padding: 5px 9px; border-radius: 8px;
+  background: transparent; color: var(--ink-soft);
+}
+.lang-btn:hover { color: var(--ink); }
+.lang-btn.is-active {
+  background: var(--grass); color: #fff;
+  box-shadow: 0 2px 0 var(--grass-dark);
+}
+
 .progress { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
 .progress > div { height: 100%; width: 0; background: var(--grass); transition: width .2s; }
 
@@ -275,6 +344,8 @@ input[type=file] { padding: 8px; background: #F4F7F0; }
   display: flex; align-items: center; justify-content: center;
   padding: 24px;
 }
+/* Above .langswitch — see the note there for why the two overlays differ. */
+#confirm-overlay { z-index: 80; }
 .job, .confirm { width: min(720px, 100%); max-height: 86vh; overflow: auto; }
 .confirm { width: min(460px, 100%); }
 .confirm p { color: var(--ink-soft); font-size: 14px; line-height: 1.55; }

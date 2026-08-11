@@ -22,6 +22,47 @@ requests get a 401 from the edge.
 
 ---
 
+## Who this is for, and what that costs you (R2, 2026-08-11)
+
+The panel's user is **MarNar, 12**. Not a sysadmin, not a developer, and — this is
+the part that matters — someone who should come away from reading it knowing
+something he didn't. That is a real design constraint, and it is the reason the
+copy looks the way it does. The bar for any string you add:
+
+> *would a curious twelve-year-old understand this, and would reading it leave
+> him knowing something he didn't know before?*
+
+Three consequences for anyone editing the UI:
+
+- **Every user-visible string lives in `ui/html/i18n.js`**, in both `es` and
+  `en`, keyed. Nothing user-visible is hard-coded in `index.html` or `app.js` —
+  the markup carries `data-i18n` / `data-i18n-ph` / `data-i18n-title`
+  attributes and `I18N.applyStatic()` fills them. **Add a key to both languages
+  or don't add it.** Spanish is the fallback, so a missing English string
+  degrades to Spanish rather than to a raw key.
+- **`help.*` keys explain the concept, not the control.** "This button makes a
+  backup" fails the bar; explaining *what a backup is and why a world can't
+  safely be copied while it's being written to* passes it. These render as the
+  expandable **"¿Qué es esto?" / "What is this?"** blocks, one per section, so
+  the explanation is there for whoever wants it without turning the page into an
+  essay.
+- **Never translate data.** Gamertags, seeds, filenames, log lines and the audit
+  log's `what` column are rendered verbatim. A translated `players.add` in the
+  audit trail would be a lie about what happened.
+
+The language switch is the **ES / EN** pair in the top bar. The choice is stored
+in `localStorage` under `mcadmin.lang` and survives reloads. Switching is live —
+no reload — including for a job title that is mid-run, which is why `app.js`
+keeps a job's title as `{titleKey, titleVars}` rather than as a rendered string.
+
+## Backups are not on a schedule
+
+`marnar-mc-backup.timer` is **disabled and stopped on purpose** since
+2026-08-11. Copies are made when the **"Make a copy"** button is pressed, and
+automatically before any destructive world operation. Do not re-enable the timer
+without asking; the plan is to revisit this when offsite S3 backups are built
+(O-4a). Full reasoning in [../docs/REQUIREMENTS-ADMIN-R2.md](../docs/REQUIREMENTS-ADMIN-R2.md).
+
 ## Shape
 
 ```
@@ -58,7 +99,7 @@ line to `docker` does not simplify it, it deletes it.
 
 | Path | What |
 |---|---|
-| `ui/html/` | The SPA — three files, no build step |
+| `ui/html/` | The SPA — four files, no build step (`index.html`, `styles.css`, `app.js`, `i18n.js`) |
 | `ui/Dockerfile`, `ui/nginx.conf`, `ui/docker-entrypoint.sh` | nginx image; entrypoint writes `config.js` and the `/api` proxy at start |
 | `ui/docker-compose.yml` | Deployed to `/home/mcadmin/stacks/mc-admin/` |
 | `agent/mcadmin-agent.py` | Host agent, Python **stdlib only** (system Python is 3.9) |
@@ -107,7 +148,8 @@ healthy server, from the `33` in `ESC[33m`. `rcon()` strips them centrally.
 
 - **No user database.** Authentication is the NPM Access List, by decision.
 - **No player data in Git.** The roster and audit log live on the server and
-  ride along in the nightly backup (F-10a).
+  ride along in the world backup (F-10a) — which is **no longer nightly**, see
+  below.
 - **No typed confirmations.** One dialog, by decision. The safety net is
   server-side instead: destructive verbs take a backup first and *rename* the
   old world rather than deleting it, where a tired operator cannot skip it.

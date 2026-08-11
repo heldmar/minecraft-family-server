@@ -1,5 +1,20 @@
+# ⛔ DISABLED ON PURPOSE — do not enable this without asking (C-1, 2026-08-11).
+#
+# Helder turned scheduled backups off: "I don't want backups to be executed
+# automatically yet, this will come when we set up S3 if we get to that."
+#
+# The unit file is kept rather than deleted so that turning the schedule back on
+# is one command instead of an archaeology exercise, and so that whoever finds
+# it knows the absence is a decision rather than an oversight:
+#
+#     sudo systemctl enable --now marnar-mc-backup.timer
+#
+# Backups still happen — just never on a clock. `marnar-mc-backup` is invoked by
+# the panel's "Make a copy" button (C-3) and automatically before any
+# destructive world operation (C-2). See docs/REQUIREMENTS-ADMIN-R2.md.
+
 [Unit]
-Description=Daily Minecraft world backup (O-4)
+Description=Minecraft world backup — DISABLED, see comment above (was O-4)
 
 [Timer]
 # 04:00 local. Before the 05:00 restart, so the backup captures the day that

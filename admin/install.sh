@@ -86,5 +86,6 @@ REMOTE
 echo "==> building and starting the UI container"
 ssh "$HOST" "cd $STACK && docker compose up -d --build"
 
-echo "==> done. Remaining manual step: the NPM proxy host + Access List for"
-echo "    minecraft-admin.example.net -> mc-admin:80"
+echo "==> done. The panel is live at https://minecraft-admin.example.net"
+echo "    (NPM proxy host id 8 -> mc-admin:80, behind Access List 1. Nothing"
+echo "     manual is left; the edge is already wired. See docs/RUNBOOK.md 3b.)"

@@ -1,5 +1,16 @@
 #!/bin/bash
-# Daily world backup for the Minecraft server (O-4).
+# World backup for the Minecraft server.
+#
+# ⚠️ THIS NO LONGER RUNS ON A SCHEDULE (C-1, 2026-08-11). `marnar-mc-backup.timer`
+# is disabled and stopped. The script is still very much alive and must keep
+# working, because it is invoked two other ways:
+#
+#   1. The "Make a copy" button in the admin panel (C-3).
+#   2. `marnar-mc-adminctl preserve_current_world`, automatically, immediately
+#      before regenerating, importing or restoring a world (C-2) — which is the
+#      only reason those operations can be undone.
+#
+# So: do not delete this because "backups are off". Off means unscheduled.
 #
 # The world is a live tree of memory-mapped region files. Copying it while the
 # server is writing produces an archive that unpacks fine and then corrupts a
@@ -14,20 +25,32 @@
 # could be days. The trap fires on EXIT, so there is no path out of this script
 # that leaves saving off.
 #
-# Retention: 14 dailies + 4 weeklies (O-4). Weeklies are Sunday's daily,
-# hard-linked rather than re-archived, so a weekly costs no extra disk until the
-# daily ages out from under it.
+# Retention (D-2): 3 + 1, cut down from 14 + 4 when the schedule was turned off.
+# With no nightly run, these are no longer "one per day" — they are one per
+# manual press and one per risky operation, so a fortnight's worth is both
+# meaningless and 4 GB of disk nobody asked for. Weeklies are Sunday's copy,
+# hard-linked rather than re-archived, so they cost no extra disk until the
+# daily ages out from under them.
 set -uo pipefail
 
 STACK=/home/mcadmin/stacks/minecraft
 WORLD_DIR="$STACK/data"
 DEST=/home/mcadmin/backups/minecraft
-KEEP_DAILY=14
-KEEP_WEEKLY=4
+KEEP_DAILY=3
+KEEP_WEEKLY=1
 
 STAMP=$(date +%Y-%m-%d)
 DOW=$(date +%u)          # 7 = Sunday
 ARCHIVE="$DEST/daily/world-$STAMP.tar.zst"
+
+# Once a day this name was unique by construction. Now that backups are
+# on-demand (C-1), two in one day are ordinary — press the button, then
+# regenerate a world an hour later — and the second would silently overwrite the
+# first. That is exactly the copy someone would want back, so a same-day repeat
+# gets the time appended instead of clobbering.
+if [ -e "$ARCHIVE" ]; then
+  ARCHIVE="$DEST/daily/world-$STAMP-$(date +%H%M%S).tar.zst"
+fi
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*"; }
 mc()  { docker exec minecraft rcon-cli "$1" >/dev/null 2>&1; }

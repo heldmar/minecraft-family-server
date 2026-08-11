@@ -30,6 +30,12 @@ AUDIT=$STACK/roster/audit.log
 BACKUPS=/home/mcadmin/backups/minecraft
 COMPOSE="docker compose -f $STACK/docker-compose.yml"
 
+# How many set-aside worlds to keep (D-3). Each is a full uncompressed copy of
+# the world — around 816 MB — so this is the single largest thing the panel can
+# leave lying on the boot volume. One keeps the last destructive operation
+# undoable, which is the floor set by D-4.
+KEEP_REPLACED=1
+
 die() { echo "ERROR: $*" >&2; exit 1; }
 
 # Who asked. The agent passes the authenticated identity through so the audit
@@ -197,16 +203,23 @@ verb_audit() {
 # world
 # ---------------------------------------------------------------------------
 verb_world_info() {
-  local seed="" border="" mb backups
+  local seed="" border="" mb backups bmb rmb replaced
   if running; then
     seed=$(rcon "seed" 2>/dev/null | grep -o '\-\?[0-9]\{5,\}' | head -1)
     border=$(rcon "worldborder get" 2>/dev/null | grep -o '[0-9]\+' | head -1)
   fi
   mb=$(du -sm "$WORLD" 2>/dev/null | cut -f1)
   backups=$(ls -1 "$BACKUPS"/daily/world-*.tar.zst 2>/dev/null | wc -l)
+  # D-5: the panel answers "is this filling up?" without anyone opening a shell.
+  # Both numbers matter and they are wildly different sizes: a backup is ~283 MB
+  # compressed, a set-aside world is ~816 MB raw.
+  bmb=$(du -sm "$BACKUPS" 2>/dev/null | cut -f1)
+  rmb=$(du -smc "$DATA"/world.replaced-* 2>/dev/null | tail -1 | cut -f1)
+  replaced=$(ls -1d "$DATA"/world.replaced-* 2>/dev/null | wc -l)
   cat <<EOF
 {"seed":$(jstr "${seed:-}"),"border":$(jstr "${border:-}"),"world_mb":${mb:-0},
- "backup_count":${backups:-0},"level_name":"world"}
+ "backup_count":${backups:-0},"backups_mb":${bmb:-0},
+ "replaced_count":${replaced:-0},"replaced_mb":${rmb:-0},"level_name":"world"}
 EOF
 }
 
@@ -229,11 +242,32 @@ verb_backup_now() {
   /usr/local/sbin/marnar-mc-backup
 }
 
+# Keep only the most recent $KEEP entries matching a glob, deleting the rest.
+#
+# D-4 is the rule that matters here: this ALWAYS leaves the newest one. "Free up
+# disk" must never quietly become "no way back from the last thing you did", so
+# a keep count below 1 is a bug, not a configuration.
+prune_keeping_newest() {
+  local keep=$1 label=$2 old
+  shift 2
+  [ "$keep" -ge 1 ] || die "refusing to prune $label with keep=$keep"
+  # shellcheck disable=SC2012  # ls -t is the point; these names have no spaces
+  ls -1dt "$@" 2>/dev/null | tail -n +$((keep + 1)) | while read -r old; do
+    [ -e "$old" ] || continue
+    echo "    freeing disk: removing old $label $(basename "$old")"
+    rm -rf "$old"
+  done
+}
+
 # Every destructive verb funnels through this. The UI only asks for one
 # confirmation — that was a deliberate choice to keep it usable — so the safety
 # net is here instead, where a tired operator cannot skip it: take a fresh
-# backup, and move the old world aside rather than deleting it. Disk is cheaper
-# than a world nobody can get back.
+# backup, and move the old world aside rather than deleting it.
+#
+# ⚠️ This backup is the reason C-1 could turn the nightly timer off without
+# making world regeneration irreversible. It is on-demand, not scheduled. If you
+# are tempted to remove it because "backups are off now", read C-2 first — the
+# panel's single confirm dialog is only defensible because this exists.
 preserve_current_world() {
   local reason=$1 stamp
   stamp=$(date +%Y%m%d-%H%M%S)
@@ -246,7 +280,11 @@ preserve_current_world() {
   if [ -d "$WORLD" ]; then
     echo "==> preserving the current world as world.replaced-$stamp"
     mv "$WORLD" "$DATA/world.replaced-$stamp" || die "could not move the old world aside"
-    echo "    (delete it by hand once you are happy: $DATA/world.replaced-$stamp)"
+    # D-3: these are ~816 MB each, uncompressed, and nothing used to remove
+    # them. Keeping one means the last operation stays undoable; keeping all of
+    # them means the boot volume fills and takes the other sites with it.
+    prune_keeping_newest "$KEEP_REPLACED" "set-aside world" "$DATA"/world.replaced-*
+    echo "    (the set-aside world is at $DATA/world.replaced-$stamp)"
   fi
 }
 
