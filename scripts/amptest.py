@@ -50,4 +50,6 @@ for name, qtype, edns, label in PROBES:
         s.close()
 
 print(f"\nworst observed amplification factor: {worst:.2f}x")
-print("N-16 requires this to be about 1x. Anything above ~2x is a reflector.")
+print("N-16 ceiling is 2.00x. Baseline measured 2026-08-10 was 1.95x.")
+print("Above 2x means the Corefile has started answering something it should refuse.")
+raise SystemExit(0 if worst < 2.0 else 1)
