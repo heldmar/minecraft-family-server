@@ -1,0 +1,13 @@
+[Unit]
+Description=Per-source-IP rate limiting for the Minecraft console DNS on port 53
+After=docker.service network-online.target
+Requires=docker.service
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/marnar-mc-dns-ratelimit
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,36 @@
+# The console DNS redirect that makes the PS5 path work. See config/Corefile.
+#
+# Requirement references are to docs/REQUIREMENTS.md.
+
+services:
+  mc-dns:
+    # O-3: pinned by digest, arm64 manifest verified.
+    image: coredns/coredns@sha256:9b9128672209474da07c91439bf15ed704ae05ad918dd6454e5b6ae14e35fee6
+    container_name: mc-dns
+    restart: unless-stopped
+    command: ["-conf", "/config/Corefile"]
+
+    ports:
+      # N-13. CoreDNS binds the unprivileged 1053 inside the container so it
+      # needs no NET_BIND_SERVICE; Docker maps the privileged 53 in from outside.
+      - "53:1053/udp"
+      - "53:1053/tcp"
+
+    mem_limit: 128m
+    cpu_shares: 256
+
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      # ⚠️ Required even though CoreDNS binds 1053 here. The binary ships with
+      # the file capability cap_net_bind_service+ep, and execve() of a binary
+      # with file capabilities fails outright when they are not in the bounding
+      # set — the container dies with "exec /coredns: operation not permitted"
+      # before any of its own code runs. This is the only capability it gets.
+      - NET_BIND_SERVICE
+    read_only: true
+
+    volumes:
+      - ./config:/config:ro,z

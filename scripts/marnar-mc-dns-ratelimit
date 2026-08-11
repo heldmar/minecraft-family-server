@@ -1,0 +1,90 @@
+#!/bin/bash
+# Per-source-IP rate limiting for the console DNS redirect on port 53 (N-14).
+#
+# Why this exists: mc-dns answers UDP/53 to the whole internet. Its amplification
+# factor is small (measured ~1.9x, see docs/RUNBOOK.md), but "small" is not
+# "none", and a service that answers unauthenticated UDP from any source should
+# not be able to emit unbounded traffic. This caps what any single source
+# address can extract, which is what removes its value as a reflector.
+#
+# Why it is written this way: rules are installed into BOTH places that can lose
+# them, exactly as /usr/local/sbin/marnar-cf-lockdown does and for the same
+# reasons.
+#   1. firewalld's permanent direct config, so a `firewall-cmd --reload` — which
+#      flushes and rebuilds the whole netfilter table — puts them back as part of
+#      that rebuild instead of silently dropping them.
+#   2. the live kernel tables, applied here, which covers boot and dockerd
+#      restarts (the unit is PartOf=docker.service).
+#
+# It hangs off DOCKER-USER because published container ports bypass firewalld's
+# INPUT chain entirely — a `firewall-cmd --add-port` does NOT filter them.
+#
+# Idempotent: rebuilds from scratch every run.
+set -uo pipefail
+
+WAN_IF=enp0s6
+CHAIN=MARNAR-MCDNS
+
+# ⚠️ Match 1053, NOT 53. DOCKER-USER is in the FORWARD path, and Docker's DNAT
+# rule in nat/PREROUTING has already rewritten the destination by then:
+#   53 (as sent by the client) -> 1053 (as CoreDNS binds it inside the container)
+# A rule written against --dport 53 installs cleanly, sits in a chain that is
+# demonstrably traversed, and silently matches nothing — which is exactly how
+# this was found: the jump to $CHAIN showed 178 packets while both DROP rules
+# underneath it showed 0. Keep this in sync with the container port in
+# stacks/mc-dns/docker-compose.yml, not with the published one.
+DPORT=1053
+
+# A console resolves a handful of names when the player opens the Servers tab.
+# 5/sec sustained with a burst of 20 is far above real use and far below what is
+# useful to an attacker.
+RATE=5/sec
+BURST=20
+
+apply() {  # live kernel tables
+  iptables -N $CHAIN 2>/dev/null || true
+  iptables -F $CHAIN
+  for proto in udp tcp; do
+    iptables -A $CHAIN -i "$WAN_IF" -p $proto --dport $DPORT \
+      -m hashlimit --hashlimit-name "mcdns_$proto" --hashlimit-mode srcip \
+      --hashlimit-above $RATE --hashlimit-burst $BURST \
+      -j DROP
+  done
+  # Splice into DOCKER-USER exactly once. Appended, not inserted at position 1:
+  # MARNAR-CF must keep the first slot so the 80/443 lockdown is evaluated first.
+  iptables -D DOCKER-USER -j $CHAIN 2>/dev/null || true
+  iptables -A DOCKER-USER -j $CHAIN
+}
+
+stage() {  # firewalld permanent direct config
+  local FC="firewall-cmd --permanent --direct" i=0
+  # DOCKER-USER must be declared here too: on a reload firewalld applies its
+  # direct config BEFORE dockerd re-creates its chains, and a rule targeting a
+  # chain that does not exist yet fails the ENTIRE direct restore.
+  for c in "$CHAIN" DOCKER-USER; do
+    $FC --query-chain ipv4 filter "$c" >/dev/null 2>&1 || \
+      $FC --add-chain ipv4 filter "$c" >/dev/null
+  done
+  $FC --remove-rules ipv4 filter "$CHAIN" >/dev/null 2>&1
+  for proto in udp tcp; do
+    $FC --add-rule ipv4 filter "$CHAIN" $i \
+      -i "$WAN_IF" -p $proto --dport $DPORT \
+      -m hashlimit --hashlimit-name "mcdns_$proto" --hashlimit-mode srcip \
+      --hashlimit-above $RATE --hashlimit-burst $BURST \
+      -j DROP >/dev/null
+    i=$((i + 1))
+  done
+  # Priority 10 keeps this after MARNAR-CF, which registers itself at 0.
+  $FC --add-rule ipv4 filter DOCKER-USER 10 -j "$CHAIN" >/dev/null
+}
+
+apply
+
+if [ "$(firewall-cmd --state 2>&1)" = "running" ]; then
+  stage
+  echo "firewalld permanent direct config synced"
+else
+  echo "WARNING: firewalld not running cleanly; permanent config NOT synced" >&2
+fi
+
+echo "marnar-mc-dns-ratelimit applied ($RATE per source IP, burst $BURST, udp+tcp/53)"

@@ -142,7 +142,7 @@ this is the lever to revisit, with a boot-volume backup taken first.
 | **F-5** | No player SHALL be charged anything; the server SHALL NOT collect payments or donations. |
 | **F-6** | Reachable at `minecraft.example.net`. |
 | **F-7** | Java clients SHOULD connect by hostname alone, with no port — via an SRV record. |
-| **F-8** | Bedrock clients SHOULD connect by hostname alone, by using the default Bedrock port 19132. |
+| **F-8** | ~~Bedrock clients SHOULD connect by hostname alone, by using the default Bedrock port 19132.~~ **NOT MET — deliberately traded away, 2026-08-10.** BedrockConnect must own 19132 (see N-11a), so Geyser was moved to **19133** and direct-connect Bedrock clients must type the port explicitly. This costs nothing on PS5, which reaches the server through the BedrockConnect menu and never types an address; it costs one extra field on iPad and Bedrock PC. PS5 is the stated primary objective, so the SHOULD yields to it. |
 | **F-9** | **4 concurrent players** at acceptable performance (§6). |
 | **F-10** | An operator SHALL add or remove an approved player by editing a file in this repo and running a documented deploy step — never ad-hoc on the box. |
 | **F-11** | The world SHALL be backed up automatically, with restore documented and tested. |
@@ -182,7 +182,7 @@ Vastly simpler than the Pi design — a static public IP removes DDNS entirely.
 | **N-2** | ⚠️ It SHALL be an **explicit record overriding the proxied `*.example.net` wildcard**. Verified 2026-08-10: `minecraft.example.net` currently resolves to Cloudflare proxy IPs (shared proxy addresses) via that wildcard, which would silently break every client. |
 | **N-3** | The hostname SHALL stay a **single subdomain level with a hyphen** — Universal SSL covers one level only. That is a certificate constraint, not a style choice. |
 | **N-4** | **No DDNS of any kind is required.** The IP is static. *(The Cloudflare API updater specified in v1 is obsolete and SHALL NOT be built.)* |
-| **N-5** | **UDP 19132** (Bedrock/Geyser) SHALL be opened in **both** `firewalld` **and** the cloud firewall. Both layers are required; either alone silently fails. |
+| **N-5** | **UDP 19133** (Bedrock/Geyser) SHALL be opened in **both** `firewalld` **and** the cloud firewall. Both layers are required; either alone silently fails. *(19133, not the Bedrock default 19132 — see N-11a.)* **Met 2026-08-10**, verified by RakNet unconnected ping from off-site returning the MOTD on both the IP and `minecraft.example.net`. |
 | **N-6** | **TCP 25565** (Java Edition) SHALL be opened in both layers. |
 | **N-7** | An **SRV record** `_minecraft._tcp.minecraft.example.net` → `minecraft.example.net` port 25565, satisfying F-7. |
 | **N-8** | The container SHALL be isolated from unrelated containers on the box, sharing only what ingress requires. |
@@ -198,10 +198,11 @@ no server-side fix.
 |---|---|
 | **N-11** | **BedrockConnect** SHALL be self-hosted on the server, so approved players point their console DNS at the server's own resolver rather than a public third-party one. |
 | **N-12** | Its server list SHALL contain **only** this server. |
+| **N-11a** | **BedrockConnect SHALL own UDP 19132**, and Geyser SHALL move to 19133. This is forced, not a preference: every console "featured server" entry hard-codes port 19132, so whatever the console is redirected to must answer there. The two cannot share the port. This is what makes F-8 unachievable. |
 | **N-13** | **UDP/TCP 53** SHALL be opened in both `firewalld` and the cloud firewall. *(Unlike the home connection, no ISP or router sits in the path here.)* |
-| **N-14** | The DNS service SHALL apply **per-source-IP rate limiting** so it cannot be used as a traffic amplifier. |
+| **N-14** | The DNS service SHALL apply **per-source-IP rate limiting** so it cannot be used as a traffic amplifier. **Met 2026-08-10**: `marnar-mc-dns-ratelimit`, 5/sec per source with a burst of 20; an 80-query flood from one address yielded exactly 20 replies and 60 drops, and a normal query still answered afterwards. ⚠️ The rule matches **`--dport 1053`**, not 53 — `DOCKER-USER` sits in the FORWARD path, *after* Docker's DNAT has already rewritten the published port to the container port. A rule written against 53 installs cleanly and matches nothing. |
 | **N-15** | Recursion SHALL be **disabled**; it answers only BedrockConnect's fixed hostname set and refuses everything else. It SHALL NOT be a general-purpose resolver. |
-| **N-16** | Amplification factor SHALL be **verified as ≈1×** before port 53 is opened — confirmed, not assumed. |
+| **N-16** | Amplification factor SHALL be **measured, not assumed**, before port 53 is opened, and SHALL stay below 2×. **Measured 2026-08-10: worst case 1.95×** (a minimal 37-byte A query for one of the six redirected names drawing a 72-byte reply). The original text of this requirement guessed "≈1×"; the real figure is recorded here instead. 1.95× is a poor reflector — the classic open-resolver attacks run 30–50× — and N-14 caps the sustained output per source regardless, but the number is not 1 and should not be written down as if it were. Anything above 2× means the Corefile has started answering something it should refuse; re-run `amptest.py` after any Corefile change. |
 | **N-17** | A **player-facing setup guide** SHALL be written for PS5, iPad and PC, in plain language suitable for a child or a friend's parent. |
 
 ---
@@ -298,3 +299,6 @@ Core requirement: **only explicitly approved people can connect.**
 | 2026-08-10 | Pi test artefacts removed; six containers untouched | Analysis |
 | 2026-08-10 | Difficulty Normal; **Nether and End enabled**; allowlist commissioned empty with enforcement on | Helder |
 | 2026-08-10 | Full unattended install authorised, **including exposing port 53** for BedrockConnect, subject to N-14/N-15/N-16 | Helder |
+| 2026-08-10 | **F-8 abandoned**: Geyser moved to 19133 so BedrockConnect can own 19132. PS5 is the primary objective and is unaffected; iPad/PC pay one extra field | Analysis |
+| 2026-08-10 | N-16 rewritten from the assumed "≈1×" to the **measured 1.95×**, with a <2× ceiling as the actual gate | Analysis |
+| 2026-08-10 | Nether border set to **375**, i.e. overworld ÷ 8, so every in-border overworld location has a reachable Nether counterpart and no more | Analysis |

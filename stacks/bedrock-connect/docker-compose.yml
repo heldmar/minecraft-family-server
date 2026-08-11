@@ -1,0 +1,59 @@
+# BedrockConnect — the PS5 entry point.
+#
+# PS5 Minecraft has no field for typing a server address. The only way in is the
+# console DNS trick: the player points their console's DNS at this host, opens
+# the in-game "Servers" tab and clicks a featured server. Our resolver (the
+# separate `mc-dns` CoreDNS stack) answers with this box's address, the console
+# connects here on UDP 19132 believing it is that featured server, and
+# BedrockConnect shows a menu containing our server.
+#
+# That is why this owns 19132 and Geyser was moved to 19133.
+#
+# ⚠️ Options are read from `BC_`-prefixed environment variables; the jar
+# lowercases the name and strips the prefix. A misspelled one is silently
+# ignored rather than rejected, so verify behaviour, not just the file.
+#
+# Requirement references are to docs/REQUIREMENTS.md.
+
+services:
+  bedrock-connect:
+    # O-3: pinned by digest, arm64 manifest verified.
+    image: pugmatt/bedrock-connect@sha256:c3f1ba4df80c32df7f36236fda72df732ec293c206efe37c61c323f2f4d6e9f4
+    container_name: bedrock-connect
+    restart: unless-stopped
+
+    ports:
+      - "19132:19132/udp"              # the console believes this is a featured server
+
+    mem_limit: 384m
+    cpu_shares: 256                    # P-8: idle between joins; yields to everything else
+
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+    volumes:
+      - ./config:/config:z
+
+    environment:
+      # No database. This holds one hardcoded server entry and no player state.
+      BC_DB_TYPE: "none"
+
+      # N-12: the menu contains exactly one entry — ours.
+      #   featured_servers off removes the built-in public server list.
+      #   user_servers off stops a player typing an arbitrary address, which
+      #   would otherwise make this an open relay to anywhere on the internet.
+      BC_CUSTOM_SERVERS: "/config/custom_servers.json"
+      BC_FEATURED_SERVERS: "false"
+      BC_USER_SERVERS: "false"
+      BC_FETCH_FEATURED_IPS: "false"
+
+      # A-3: Xbox Live authentication, so a gamertag cannot be spoofed here
+      # either. The real gate is still the Paper allowlist behind Floodgate.
+      BC_ONLINE_MODE: "true"
+
+      BC_PACKET_LIMIT: "120"
+      BC_KICK_INACTIVE: "true"
+
+      TZ: "Etc/UTC"

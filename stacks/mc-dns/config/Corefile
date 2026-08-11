@@ -1,0 +1,43 @@
+# CoreDNS — the console DNS redirect for BedrockConnect (N-13..N-16).
+#
+# This is deliberately NOT a resolver. It knows six hostnames — the Minecraft
+# "featured server" domains a console can be made to visit — and answers those
+# with this box's address so the console lands on BedrockConnect instead. Every
+# other name gets REFUSED.
+#
+# Why that matters (N-14/N-15/N-16): a DNS server open to the internet on UDP 53
+# is the classic amplification reflector. Source addresses on UDP are forgeable,
+# so an attacker sends a small query with a victim's address as the source and
+# the server mails a large answer to the victim. The danger scales with how much
+# bigger the answer is than the query. Here:
+#   - there is no recursion and no upstream, so no large third-party answers,
+#   - the only answer type is a 4-byte A record with a 60s TTL,
+#   - everything else is REFUSED, which is a header-only reply, smaller than
+#     the query that caused it.
+# That puts the amplification factor at roughly 1x. Verify it, don't assume it —
+# see docs/RUNBOOK.md.
+
+(bedrock_redirect) {
+    # Answer any name in these zones, including subdomains, with the box IP.
+    template IN A {
+        answer "{{ .Name }} 60 IN A 198.51.100.20"
+    }
+    # Nothing here has IPv6 or any other record type. NODATA is a small reply.
+    template IN ANY {
+        rcode NOERROR
+    }
+    errors
+    log
+}
+
+hivebedrock.network:1053 play.inpvp.net:1053 mco.lbsg.net:1053 play.lbsg.net:1053 mco.cubecraft.net:1053 play.galaxite.net:1053 {
+    import bedrock_redirect
+}
+
+# N-15: catch-all. No forward, no recursion, no cache to poison.
+.:1053 {
+    template IN ANY . {
+        rcode REFUSED
+    }
+    errors
+}

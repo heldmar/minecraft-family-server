@@ -21,7 +21,13 @@ services:
 
     ports:
       - "25565:25565/tcp"              # N-6 Java Edition
-      - "19132:19132/udp"              # N-5 Bedrock via Geyser
+      # ⚠️ Geyser is on 19133, NOT the Bedrock default 19132.
+      # BedrockConnect has to own 19132 because that is the port every console
+      # "featured server" entry uses, and the PS5 redirect works by pretending to
+      # be one of those. Two processes cannot share the port, and PS5 support is
+      # the whole objective, so Geyser yields. Direct-connect Bedrock clients
+      # (iPad, PC) therefore have to enter port 19133 explicitly.
+      - "19133:19133/udp"              # N-5 Bedrock via Geyser
       # S-3: RCON (25575) is deliberately NOT published. It stays inside the
       # container network and is reached with `docker exec ... rcon-cli`.
 
