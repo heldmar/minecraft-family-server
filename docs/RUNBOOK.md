@@ -159,8 +159,24 @@ the world is the property worth testing; that `tar` exited 0 is not.
 
 > ⚠️ The archives contain `.rcon-cli.env`, which holds the RCON password. They
 > are fine where they are — same box, same trust boundary — but do not copy them
-> somewhere less protected without thinking about that first. This is the thing
-> to resolve before setting up offsite backups (Q-7).
+> somewhere less protected without thinking about that first.
+
+### Offsite — decided, not built (O-4a)
+
+Backups go to **Amazon S3**, agreed 2026-08-11, and are **deliberately parked**
+until the server has survived a real play test. Right now backups are local-only
+on the boot volume: that covers griefing and bad updates, and does not cover
+losing the volume or the instance. That is the accepted position for now.
+
+When it gets picked up, two things that are easy to miss:
+
+1. **Strip `.rcon-cli.env` from the archive**, or treat the bucket as
+   secret-bearing. Today the RCON password rides along in every backup.
+2. **The IAM credentials must not be able to delete.** A credential on the
+   server that can delete from the bucket means anything that compromises the
+   box takes the offsite copy with it — which is the exact scenario offsite
+   backups exist for. Write/append only, with versioning and lifecycle rules
+   doing the pruning on the S3 side rather than the client.
 
 ### Restoring for real
 
