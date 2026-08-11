@@ -1,0 +1,8 @@
+[Unit]
+Description=Nightly Minecraft restart (O-6a)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/marnar-mc-restart

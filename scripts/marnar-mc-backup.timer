@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily Minecraft world backup (O-4)
+
+[Timer]
+# 04:00 local. Before the 05:00 restart, so the backup captures the day that
+# just happened rather than an empty freshly-restarted server.
+OnCalendar=*-*-* 04:00:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

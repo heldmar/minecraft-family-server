@@ -1,0 +1,36 @@
+#!/bin/bash
+# Nightly restart (O-6a).
+#
+# Paper's heap fragments over a long uptime and the JVM never fully gives it
+# back; a daily bounce is cheaper than tuning GC on a 1536M heap. Runs at 05:00
+# local, which is the quietest hour for a server whose players are children in
+# the target region.
+#
+# Two things must happen before the container goes down, in this order:
+#   1. warn anyone online, with enough notice to get somewhere safe
+#   2. force a save, so the shutdown is not the only thing writing the world
+# Paper does save on a clean shutdown, but a clean shutdown is exactly what is
+# not guaranteed if the stop times out.
+set -uo pipefail
+
+mc() { docker exec minecraft rcon-cli "$1" >/dev/null 2>&1; }
+log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*"; }
+
+if ! docker ps --format '{{.Names}}' | grep -qx minecraft; then
+  log "container not running; starting it instead of restarting"
+  cd /home/mcadmin/stacks/minecraft && docker compose up -d
+  exit $?
+fi
+
+for n in 60 30 10; do
+  mc "say Reinicio automatico en $n segundos - buscá un lugar seguro"
+  sleep $(( n == 60 ? 30 : (n == 30 ? 20 : 10) ))
+done
+
+log "forcing world save"
+mc "save-all flush"
+sleep 5
+
+log "restarting container"
+cd /home/mcadmin/stacks/minecraft && docker compose restart minecraft
+log "restart issued"

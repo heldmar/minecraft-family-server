@@ -1,0 +1,106 @@
+#!/bin/bash
+# Daily world backup for the Minecraft server (O-4).
+#
+# The world is a live tree of memory-mapped region files. Copying it while the
+# server is writing produces an archive that unpacks fine and then corrupts a
+# chunk the first time a player walks into it — the failure surfaces days later,
+# far from its cause. So this does the only safe thing: tell the server to flush
+# and stop writing, copy, then let it resume. `save-off` + `save-all flush` is
+# the supported way to do that without stopping the server.
+#
+# The trap is what makes it safe. If the copy fails, or the disk fills, or the
+# script is killed, `save-on` must still run — a server left with saving
+# disabled silently discards every block placed until someone notices, which
+# could be days. The trap fires on EXIT, so there is no path out of this script
+# that leaves saving off.
+#
+# Retention: 14 dailies + 4 weeklies (O-4). Weeklies are Sunday's daily,
+# hard-linked rather than re-archived, so a weekly costs no extra disk until the
+# daily ages out from under it.
+set -uo pipefail
+
+STACK=/home/mcadmin/stacks/minecraft
+WORLD_DIR="$STACK/data"
+DEST=/home/mcadmin/backups/minecraft
+KEEP_DAILY=14
+KEEP_WEEKLY=4
+
+STAMP=$(date +%Y-%m-%d)
+DOW=$(date +%u)          # 7 = Sunday
+ARCHIVE="$DEST/daily/world-$STAMP.tar.zst"
+
+log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*"; }
+mc()  { docker exec minecraft rcon-cli "$1" >/dev/null 2>&1; }
+
+mkdir -p "$DEST/daily" "$DEST/weekly"
+
+if ! docker ps --format '{{.Names}}' | grep -qx minecraft; then
+  log "ERROR: minecraft container is not running; refusing to back up a world that may be mid-write"
+  exit 1
+fi
+
+# See the header: this must run no matter how we leave.
+restore_saving() {
+  mc "save-on"
+  log "saving re-enabled"
+}
+trap restore_saving EXIT
+
+log "flushing world to disk"
+mc "save-off"
+mc "save-all flush"
+sleep 5   # give the flush time to land before we start reading
+
+log "archiving to $ARCHIVE"
+# Deny-list, not allow-list. An allow-list naming ./world ./world_nether
+# ./world_the_end is the obvious way to write this and it is wrong: Paper 26.x
+# keeps all three dimensions under world/dimensions/, so those last two paths do
+# not exist, tar exits non-zero, and the backup that "ran every night" produced
+# nothing. Worse, an allow-list silently omits anything a future version adds.
+# Excluding what is re-downloadable is the safer direction to be wrong in — the
+# cost of including something unnecessary is disk, the cost of omitting
+# something is the world.
+#
+# What is excluded and why it is safe to lose:
+#   libraries, *.jar   re-downloaded by the itzg image on start
+#   cache, .cache      derived
+#   logs               diagnostic only, and rotated anyway
+# Everything else is kept, including plugins/ — Geyser's config.yml holds the
+# hand-edited 19133 port and floodgate's key.pem is what lets Bedrock players
+# authenticate. Losing key.pem is not fatal but logs every player out.
+if ! tar --use-compress-program='zstd -3 -T2' \
+        -C "$WORLD_DIR" \
+        --exclude='./libraries' \
+        --exclude='./cache' --exclude='./.cache' \
+        --exclude='./logs' \
+        --exclude='./*.jar' \
+        -cf "$ARCHIVE.partial" . 2>"$DEST/.tar.err"; then
+  log "ERROR: archive failed"
+  sed 's/^/  tar: /' "$DEST/.tar.err" | head -5
+  rm -f "$ARCHIVE.partial"
+  exit 1
+fi
+rm -f "$DEST/.tar.err"
+# Only now does it get its real name. A half-written file never carries a name
+# the restore procedure would trust.
+mv "$ARCHIVE.partial" "$ARCHIVE"
+log "archive complete: $(du -h "$ARCHIVE" | cut -f1)"
+
+# Sunday's daily is also this week's weekly. Hard link, don't copy.
+if [ "$DOW" = "7" ]; then
+  ln -f "$ARCHIVE" "$DEST/weekly/world-$STAMP.tar.zst"
+  log "linked as weekly"
+fi
+
+prune() {
+  local dir=$1 keep=$2
+  # shellcheck disable=SC2012
+  ls -1t "$dir"/world-*.tar.zst 2>/dev/null | tail -n +$((keep + 1)) | while read -r old; do
+    rm -f "$old"
+    log "pruned $(basename "$old")"
+  done
+}
+prune "$DEST/daily" "$KEEP_DAILY"
+prune "$DEST/weekly" "$KEEP_WEEKLY"
+
+log "done: $(ls -1 "$DEST/daily" | wc -l) dailies, $(ls -1 "$DEST/weekly" | wc -l) weeklies, $(df -h "$DEST" | awk 'NR==2{print $4}') free"

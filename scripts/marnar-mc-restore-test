@@ -1,0 +1,72 @@
+#!/bin/bash
+# Non-destructive restore verification (O-5).
+#
+# "An untested backup is not a backup" — but the usual way to test a restore is
+# to overwrite the live world, which is only safe once you already trust the
+# backup. This does the honest version instead: unpack the archive into a
+# throwaway directory, boot a SECOND Paper container against it on ports nobody
+# uses, and wait for it to report "Done" — which it only does after it has
+# successfully read level.dat, the region files and the plugin configs. Then
+# throw it away.
+#
+# If this passes, the archive is known to contain a world a server will actually
+# start on. That is the property that matters, and it is not the same as "tar
+# exited 0".
+#
+# Runs the test server with no ports published at all, so it cannot be reached
+# and cannot collide with the live server's 25565/19133.
+set -uo pipefail
+
+ARCHIVE=${1:-$(ls -1t /home/mcadmin/backups/minecraft/daily/world-*.tar.zst 2>/dev/null | head -1)}
+WORK=/home/mcadmin/backups/minecraft/.restore-test
+NAME=mc-restore-test
+
+log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*"; }
+cleanup() {
+  docker rm -f "$NAME" >/dev/null 2>&1
+  rm -rf "$WORK"
+  log "test container and scratch directory removed"
+}
+trap cleanup EXIT
+
+[ -n "$ARCHIVE" ] && [ -f "$ARCHIVE" ] || { log "ERROR: no archive found"; exit 1; }
+log "testing $ARCHIVE ($(du -h "$ARCHIVE" | cut -f1))"
+
+rm -rf "$WORK"; mkdir -p "$WORK"
+if ! tar --use-compress-program=unzstd -C "$WORK" -xf "$ARCHIVE"; then
+  log "FAIL: archive did not unpack"
+  exit 1
+fi
+[ -f "$WORK/world/level.dat" ] || { log "FAIL: no world/level.dat in archive"; exit 1; }
+log "unpacked; world/level.dat present"
+
+# Same image as production, or the test proves nothing about production.
+IMAGE=$(docker inspect minecraft --format '{{.Config.Image}}')
+chown -R 1000:1000 "$WORK"
+
+log "booting a throwaway server against the restored world"
+docker run -d --name "$NAME" \
+  -e EULA=TRUE -e TYPE=PAPER -e VERSION=26.2 -e MEMORY=768M \
+  -e UID=1000 -e GID=1000 -e ONLINE_MODE=FALSE \
+  -e SKIP_SUDO=TRUE \
+  --memory 1g --cpu-shares 128 \
+  -v "$WORK:/data:z" \
+  "$IMAGE" >/dev/null || { log "FAIL: container would not start"; exit 1; }
+
+for _ in $(seq 1 60); do
+  if docker logs "$NAME" 2>&1 | grep -q 'Done ([0-9.]*s)!'; then
+    log "PASS: restored world booted cleanly"
+    docker logs "$NAME" 2>&1 | grep -E 'Preparing level|Done \(' | tail -3
+    exit 0
+  fi
+  if docker logs "$NAME" 2>&1 | grep -qiE 'Failed to (load|start)|Exception in server tick|corrupt'; then
+    log "FAIL: server errored while loading the restored world"
+    docker logs "$NAME" 2>&1 | tail -15
+    exit 1
+  fi
+  sleep 10
+done
+
+log "FAIL: restored world did not finish booting within 10 minutes"
+docker logs "$NAME" 2>&1 | tail -15
+exit 1

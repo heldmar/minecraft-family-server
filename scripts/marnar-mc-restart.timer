@@ -1,0 +1,10 @@
+[Unit]
+Description=Nightly Minecraft restart (O-6a)
+
+[Timer]
+# 05:00 local, the quietest hour. One hour after the backup.
+OnCalendar=*-*-* 05:00:00
+Persistent=false
+
+[Install]
+WantedBy=timers.target

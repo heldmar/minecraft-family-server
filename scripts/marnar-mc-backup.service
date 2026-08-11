@@ -1,0 +1,8 @@
+[Unit]
+Description=Daily Minecraft world backup (O-4)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/marnar-mc-backup
