@@ -12,6 +12,16 @@ API_UPSTREAM="${API_UPSTREAM:-http://172.18.0.1:8788}"
 API_UPSTREAM="${API_UPSTREAM%/}"
 API_TOKEN="${API_TOKEN:-}"
 
+# What players type to join. Shown on the Players screen so MarNar can read the
+# address out to a friend without anyone opening a runbook.
+#
+# These are config, not facts the panel can discover: the agent talks to the
+# container over RCON and has no idea what public hostname points at it. If the
+# ingress ever changes (F-6/N-1, or Geyser moving off 19133), change it here —
+# the panel will keep confidently displaying the old address otherwise.
+SERVER_HOST="${SERVER_HOST:-minecraft.example.net}"
+BEDROCK_PORT="${BEDROCK_PORT:-19133}"
+
 # Where the bearer token lives depends on the mode, and the difference is not
 # cosmetic:
 #
@@ -34,7 +44,9 @@ cat > "$CONFIG_PATH" <<EOF
 window.__MCADMIN_CONFIG__ = {
   API_BASE_URL: "${API_BASE_URL}",
   REFRESH_SECONDS: ${REFRESH_SECONDS:-20},
-  API_TOKEN: "${CONFIG_TOKEN}"
+  API_TOKEN: "${CONFIG_TOKEN}",
+  SERVER_HOST: "${SERVER_HOST}",
+  BEDROCK_PORT: "${BEDROCK_PORT}"
 };
 EOF
 
@@ -55,5 +67,5 @@ location /api/ {
 }
 EOF
 
-echo "mcadmin-ui: wrote $CONFIG_PATH (API_BASE_URL=${API_BASE_URL})"
+echo "mcadmin-ui: wrote $CONFIG_PATH (API_BASE_URL=${API_BASE_URL}, SERVER_HOST=${SERVER_HOST}:${BEDROCK_PORT})"
 echo "mcadmin-ui: wrote $PROXY_PATH (/api/ -> ${API_UPSTREAM})"

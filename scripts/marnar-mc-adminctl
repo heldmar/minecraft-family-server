@@ -118,6 +118,36 @@ EOF
 # ---------------------------------------------------------------------------
 # players
 # ---------------------------------------------------------------------------
+# ⚠️ A player added by Floodgate UUID instead of by gamertag — the escape hatch
+# when GeyserMC's lookup is down, RUNBOOK §3c — is stored in whitelist.json as
+# {"uuid": "...", "name": "unknown"}, and Paper never backfills the real name,
+# not even after that player joins successfully. Matching the roster against
+# those raw names would report somebody who is demonstrably in the game as "sin
+# sincronizar" — precisely the "I added him and he still can't join" confusion
+# verb_players_list exists to prevent. usercache.json carries the UUID ->
+# gamertag mapping once they have joined once, so translate through it.
+#
+# Kept deliberately in step with read_whitelist() in marnar-mc-sync-players; if
+# one changes, change both. A top-level function rather than an inline loop
+# because the `)` in a case pattern would otherwise close the `$( )` around it.
+whitelist_names() {
+  local wl uc uuid name resolved
+  wl=$(docker exec minecraft cat /data/whitelist.json 2>/dev/null | tr -d '\n' | sed 's/}/}\n/g')
+  uc=$(docker exec minecraft cat /data/usercache.json 2>/dev/null | tr -d '\n' | sed 's/}/}\n/g')
+  while IFS= read -r entry; do
+    printf '%s' "$entry" | grep -q '"uuid"' || continue
+    uuid=$(printf '%s' "$entry" | grep -o '"uuid"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')
+    name=$(printf '%s' "$entry" | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')
+    if [ "$name" = "unknown" ] && [ -n "$uuid" ]; then
+      resolved=$(printf '%s\n' "$uc" | grep -F "\"$uuid\"" \
+                 | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' \
+                 | sed 's/.*"\([^"]*\)"$/\1/' | head -1)
+      [ -n "$resolved" ] && name=$resolved
+    fi
+    [ -n "$name" ] && printf '%s\n' "$name"
+  done <<< "$wl"
+}
+
 verb_players_list() {
   # The roster file is the source of truth; whitelist.json is what the server
   # actually enforces. Showing both is deliberate — when they disagree, that
@@ -128,9 +158,7 @@ verb_players_list() {
   running && online=$(rcon "list" 2>/dev/null | sed 's/^[^:]*:*//')
 
   local enforced
-  enforced=$(docker exec minecraft cat /data/whitelist.json 2>/dev/null \
-             | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' \
-             | sed 's/.*"\([^"]*\)"$/\1/')
+  enforced=$(whitelist_names)
 
   echo '{"players":['
   local first=1

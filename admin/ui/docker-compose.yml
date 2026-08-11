@@ -29,6 +29,13 @@ services:
       # 8788, not 8787 — 8787 is already taken on this host.
       API_UPSTREAM: "http://172.18.0.1:8788"
       REFRESH_SECONDS: "20"
+      # What players type to join, shown on the Players screen. Set explicitly
+      # rather than left to the entrypoint default so the value is visible in
+      # the stack that gets deployed. ⚠️ Bedrock is 19133, not the default
+      # 19132 — BedrockConnect owns 19132 (N-11a). If the console path is ever
+      # dismantled, Geyser moves back to 19132 and this must change with it.
+      SERVER_HOST: "minecraft.example.net"
+      BEDROCK_PORT: "19133"
       # Injected server-side into the /api proxy. Value lives in .env, which is
       # not committed, and must match MCADMIN_TOKEN in the agent's environment.
       API_TOKEN: "${API_TOKEN:?API_TOKEN must be set in .env}"

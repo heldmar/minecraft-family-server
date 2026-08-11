@@ -14,14 +14,30 @@ The server is live and reachable from the internet on all three paths (Java,
 Bedrock direct, and the console path). Backups, the nightly restart and the
 allowlist tooling are in place. World pre-generation is in progress.
 
+> ## ⛔ The PS5 cannot connect — PlayStation Plus is required
+>
+> **Minecraft on PS4/PS5 requires an active PS Plus subscription for online
+> multiplayer, third-party servers included.** Verified 2026-08-11 after a real
+> connection attempt. It is Sony's gate; there is no server-side fix. Helder's
+> decision the same day: **no PS Plus is held and none will be bought.**
+>
+> The PS5 was the primary platform and the friend group was *mostly PS5*, so
+> this removes most of the intended players. **iPad, Bedrock on PC and Java on
+> PC are unaffected and free.** `bedrock-connect`, `mc-dns` and port 53 exist
+> only for the console path and are **still deployed by decision** — what
+> happens to them is open as **Q-13**. See
+> [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) §7.1 / N-18.
+
 Two things stand between here and inviting people:
 
 1. **Nobody is on the allowlist yet** — deliberately. The server was
    commissioned with the allowlist on and enforced and empty, including MarNar,
    so there was never a window where it was reachable and open. Add gamertags
    in the [admin panel](admin/README.md).
-2. **The PS5 path has never been walked on an actual PS5.** Every component is
-   verified independently; the end-to-end run needs a console.
+2. ⛔ **The PS5 path is blocked by PS Plus** (above) — superseding the previous
+   note here, which said only that the path had never been walked on a real
+   console. It has now been attempted, and it fails before reaching anything
+   this project built.
 
 Start here: **[`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md)** for what was
 asked for and why, **[`docs/RUNBOOK.md`](docs/RUNBOOK.md)** for operating it.
@@ -43,9 +59,12 @@ for the other parents)*
 
 | Platform | Address | Port |
 |---|---|---|
-| PS5 (and Xbox/Switch if they hide "Add server") | *not typed* — set console DNS to `198.51.100.20` | — |
+| ⛔ **PS5** — **blocked, requires PS Plus** | ~~set console DNS to `198.51.100.20`~~ | — |
 | iPad, phone, Bedrock on PC | `minecraft.example.net` | **19133** |
 | Java Edition on PC | `minecraft.example.net` | *none needed* |
+
+The PS5 row is kept rather than deleted because the mechanism is built and
+working — it is the *subscription*, not the addressing, that blocks it.
 
 ⚠️ Bedrock is on **19133**, not the default 19132. BedrockConnect has to own
 19132 because consoles hard-code it, so Geyser moved one along. PS5 is

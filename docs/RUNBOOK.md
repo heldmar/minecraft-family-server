@@ -125,7 +125,9 @@ at the next sync. That is intended. `--dry-run` shows exactly what would change.
 
 If the UI shows someone as **sin sincronizar**, they are on the roster but the
 server's `whitelist.json` does not have them — they will get a plain "not
-white-listed" kick with nothing useful in the log. Press **Sincronizar**.
+white-listed" kick with nothing useful in the log. Press **Sincronizar**. If
+they are *still* rejected after that, the sync itself is failing and §3c is the
+place to go, not DNS.
 
 ---
 
@@ -189,6 +191,160 @@ ssh mcserver 'docker logs -f minecraft'
 
 Chunky reports progress every 120 seconds during pre-generation. Polling faster
 than that looks exactly like a stall and is not one.
+
+---
+
+## 3c. Player added but still rejected (A-1)
+
+Symptom: someone is on the roster, the panel shows them **sin sincronizar /
+not synced**, and in game they get **"You are not whitelisted on this
+server!"**. First seen 2026-08-11 with `examplegamertag` on an iPad.
+
+**Do not start with DNS or ports.** There is a check that tells the two apart in
+one step — look for the player in the server log:
+
+```bash
+ssh mcserver 'sudo grep -i THEIRGAMERTAG /home/mcadmin/stacks/minecraft/data/logs/latest.log | tail -20'
+```
+
+If you see them **connect and then get kicked**, like this:
+
+```
+[Geyser-Spigot] Player connected with username examplegamertag (2168)
+[Geyser-Spigot] examplegamertag (logged in as: examplegamertag) has connected to the Java server
+[Geyser-Spigot] examplegamertag has disconnected from the Java server because of You are not whitelisted on this server!
+```
+
+…then **DNS, the port, Geyser and Floodgate all worked**. The packet arrived and
+the player authenticated. The only thing that rejected them is the allowlist, so
+nothing in §2, §3b or the DNS notes is worth touching. If instead the log shows
+**nothing at all** for that gamertag, they never reached the server and it *is*
+an addressing fault — go to §2.
+
+**Why the add silently failed.** `fwhitelist add <gamertag>` has to turn the
+Xbox gamertag into an XUID first, and it does that through **GeyserMC's public
+API**, not locally. When that lookup cannot answer, the command does nothing and
+**returns an empty string** — no error, no non-zero exit. The real reason is
+only in the server log:
+
+```
+[floodgate] Got an error from requesting the xuid of a Bedrock player:
+Unable to find user in our cache. Please try specifying their Floodgate UUID instead
+```
+
+Since 2026-08-11 `marnar-mc-sync-players` **verifies every add against
+`whitelist.json` afterwards and exits 1** with that log excerpt if it did not
+land, so this should announce itself rather than being found by a child who
+cannot get in. Before that fix it printed `+ examplegamertag (bedrock)` and exited
+clean while the allowlist stayed empty.
+
+**Checking whether the lookup is the problem.** Query the API directly. Read the
+status code, not the message — the message says "cache" in cases that are not
+about the gamertag at all:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" https://api.geysermc.org/v2/xbox/xuid/THEIRGAMERTAG
+curl -s -o /dev/null -w "%{http_code}\n" https://api.geysermc.org/v2/xbox/xuid/Notch   # control
+```
+
+| Code | Means |
+|---|---|
+| **200** | Resolved. The gamertag is fine and the lookup works — the fault is elsewhere. |
+| **400** | The gamertag is invalid. Check spelling, and that it is the **Xbox** name, not the PlayStation one. |
+| **503** | Valid name, but GeyserMC has no cached XUID and its live Xbox lookup is down. |
+
+The control matters: a 503 on your player **and** 200 on `Notch` means the
+service is up and simply cannot resolve anyone new. That was the state on
+2026-08-11 — `Notch` returned 200, a nonsense gamertag returned 400, and both
+`examplegamertag` and an unrelated real gamertag returned 503, three times running.
+
+⚠️ **While this is happening, no new Bedrock player can be added by gamertag** —
+not just the one you noticed. It is entirely outside this server; there is
+nothing to fix here and nothing that will fix it faster. Java players are
+unaffected, since `whitelist add` uses Mojang's lookup instead.
+
+### The workaround: add them by Floodgate UUID
+
+Floodgate's error names the way out, and this route **worked on 2026-08-11** —
+MarNar was playing within minutes of it. It skips the gamertag lookup entirely.
+
+**Do not bother with Geyser's `debug-mode`.** It looks like the obvious way to
+capture the XUID from the player's own handshake and it is not: with
+`debug-mode: true` the connection attempt logs `Is player data signed? true` and
+the packet trace, but **never the XUID**. Paper also rejects the player before
+it caches anything, so `usercache.json` and `world/playerdata` both stay empty
+no matter how many times they try. That dead end cost an hour; skip it.
+
+Resolve the gamertag through a second, independent source instead:
+
+```bash
+curl -s https://playerdb.co/api/player/xbox/THEIRGAMERTAG   # data.player.id is the XUID
+```
+
+⚠️ **Check any such source against a control before trusting it.** Ask it for a
+gamertag whose XUID you can verify elsewhere and compare exactly:
+
+```bash
+curl -s https://playerdb.co/api/player/xbox/Notch          # -> 2535453759792258
+curl -s https://api.geysermc.org/v2/xbox/xuid/Notch        # -> 2535453759792258
+```
+
+Those matched on 2026-08-11, which is what made playerdb's answer for
+`examplegamertag` usable. Two sources agreeing on a third-party value is the
+evidence; "it returned a plausible-looking number" is not.
+
+Turn the XUID into a Floodgate UUID — it is just the XUID as the low bits of an
+otherwise-zero UUID:
+
+```bash
+python3 -c "xuid=2535453759792258; h=format(xuid,'032x'); \
+print('-'.join([h[0:8],h[8:12],h[12:16],h[16:20],h[20:32]]))"
+# 2535453759792258 -> 00000000-0000-0000-0009-01fb54b26482
+```
+
+Then add it, and **only** in this form:
+
+```bash
+ssh mcserver
+cd /home/mcadmin/stacks/minecraft
+sudo docker compose exec -T minecraft rcon-cli "fwhitelist add 00000000-0000-0000-0009-01fb54b26482"
+sudo docker compose exec -T minecraft rcon-cli "whitelist reload"
+```
+
+`fwhitelist add <uuid> <gamertag>` and `fwhitelist add <raw-xuid>` **both fail
+silently** — they print nothing and leave the allowlist untouched, exactly like
+the failure this whole section is about. Verify by reading the file, never by
+the absence of an error:
+
+```bash
+sudo docker compose exec -T minecraft cat /data/whitelist.json
+```
+
+### Why the entry says "unknown", and why that is now harmless
+
+The player lands in `whitelist.json` as `{"uuid": "...", "name": "unknown"}` —
+Floodgate had no gamertag to record. **Paper never backfills it**, not even
+after a successful login; verified. `whitelist add .theirgamertag` afterwards
+answers `Player is already whitelisted` and still does not fix the name.
+
+That matters because the roster is matched by **name**. Before 2026-08-11 an
+`unknown` entry read as "not on the roster", so the next sync would have removed
+a perfectly legitimate player and kicked them mid-game. Both
+`marnar-mc-sync-players` and `marnar-mc-adminctl` now translate an `unknown`
+entry through `usercache.json`, which knows the UUID once the player has joined
+even once. Consequences worth knowing:
+
+- The panel shows them correctly as synced, though `whitelist list` on the
+  console still prints `unknown`. That is cosmetic.
+- A player added by UUID who has **never joined** cannot be translated. The sync
+  prints `? unknown (added by UUID, never joined — left alone)` and **does not
+  remove them** — the safe direction. If you see that line for somebody who
+  should not be there, remove them by UUID by hand.
+- The two scripts share this logic on purpose. **If you change one, change the
+  other**, or the panel and the sync will disagree about who is allowed in.
+
+⛔ Do not "fix" this by turning the allowlist off. It stays on and enforced
+(A-1/A-1a); an open server is not an acceptable workaround for a slow one.
 
 ---
 
@@ -391,13 +547,19 @@ per `docker exec`.
 
 ## 9. Known open items
 
-- **The PS5 path has not been tested on an actual PS5.** Every component is
-  verified independently — DNS answers, BedrockConnect answers on 19132, Geyser
-  answers on 19133 — but nobody has walked a console through it. In particular,
-  whether the console falls back to its secondary DNS when ours answers
-  `REFUSED` is reasoned, not observed. `REFUSED` is the right choice for this
-  (unlike `NXDOMAIN`, it means "ask someone else" rather than "does not
-  exist"), but it needs confirming on MarNar's console.
+- ⛔ **The PS5 path is blocked by PlayStation Plus, and no amount of debugging
+  here will change that.** Verified 2026-08-11 by a real connection attempt:
+  Minecraft on PS4/PS5 requires an active PS Plus subscription for online
+  multiplayer, third-party servers included. Sony's gate, checked before
+  anything this project built is reached. **Helder holds none and will not buy
+  one** (N-18). If someone reports the console failing, this is the first thing
+  to confirm — *not* the DNS settings, which is where the troubleshooting used
+  to point. `bedrock-connect`, `mc-dns` and port 53 remain deployed by decision;
+  their fate is Q-13.
+- **Whether the console falls back to its secondary DNS on `REFUSED` is still
+  unobserved**, and now probably never will be. `REFUSED` remains the right
+  choice (unlike `NXDOMAIN`, it means "ask someone else"), but it is untested
+  and the path that would have tested it is blocked.
 - **Amplification is 1.95×, not the ≈1× originally assumed** (N-16). Re-run
   `scripts/amptest.py` after any Corefile change; above 2× means the resolver
   has started answering something it should refuse.

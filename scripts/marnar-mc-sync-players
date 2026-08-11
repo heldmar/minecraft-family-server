@@ -20,6 +20,15 @@
 # leading dot; plain `whitelist add` is for Java accounts. Using the wrong one
 # produces an entry that never matches anybody, and the player sees a generic
 # "not white-listed" kick with nothing in the log to explain it.
+#
+# ⚠️ Neither add command reports failure. `fwhitelist add` answers with an empty
+# string whether it worked or not: it has to turn the gamertag into an XUID via
+# GeyserMC's public API first, and when that lookup cannot answer, the command
+# gives up in silence. On 2026-08-11 this printed "+ examplegamertag (bedrock)" and
+# exited clean while whitelist.json stayed empty, so the panel showed the player
+# as unsynced and nothing said why. Every add is therefore VERIFIED against
+# whitelist.json afterwards and an unverified add is a hard failure — see
+# "player added but still rejected" in RUNBOOK §3c.
 set -uo pipefail
 
 # One home: the server. ROSTER= overrides it, which is how marnar-mc-adminctl
@@ -77,20 +86,53 @@ echo "roster: $COUNT player(s)"
 
 # --- read what the server currently has -------------------------------------
 # whitelist.json is the reliable source; the `whitelist list` command's output
-# is formatted for humans and changes between versions.
-CURRENT=$(docker exec minecraft cat /data/whitelist.json 2>/dev/null \
-          | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' \
-          | sed 's/.*"\([^"]*\)"$/\1/')
+# is formatted for humans and changes between versions. Read through a function
+# because the verification pass at the end has to read it a second time, after
+# the adds, and must not drift from how it was read the first time.
+#
+# ⚠️ A player added by Floodgate UUID rather than by gamertag — the manual escape
+# hatch when GeyserMC's lookup is down, RUNBOOK §3c — is stored with the literal
+# name "unknown", because Floodgate had no gamertag to record. Everything below
+# matches players by NAME, so an unresolved "unknown" reads as somebody who is
+# not on the roster, and the removal pass would kick a player who is perfectly
+# legitimate. Paper's usercache.json carries the UUID -> gamertag mapping once
+# that player has joined even once, so translate through it. Paper does NOT
+# backfill the name into whitelist.json itself; verified 2026-08-11, the entry
+# still said "unknown" after a successful login.
+read_whitelist() {
+  local wl uc uuid name resolved
+  wl=$(docker exec minecraft cat /data/whitelist.json 2>/dev/null | tr -d '\n' | sed 's/}/}\n/g')
+  uc=$(docker exec minecraft cat /data/usercache.json 2>/dev/null | tr -d '\n' | sed 's/}/}\n/g')
+  while IFS= read -r entry; do
+    case "$entry" in *'"uuid"'*) ;; *) continue ;; esac
+    uuid=$(printf '%s' "$entry" | grep -o '"uuid"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')
+    name=$(printf '%s' "$entry" | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')
+    if [ "$name" = "unknown" ] && [ -n "$uuid" ]; then
+      resolved=$(printf '%s\n' "$uc" | grep -F "\"$uuid\"" \
+                 | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' \
+                 | sed 's/.*"\([^"]*\)"$/\1/' | head -1)
+      [ -n "$resolved" ] && name=$resolved
+    fi
+    [ -n "$name" ] && printf '%s\n' "$name"
+  done <<< "$wl"
+}
+
+# A Bedrock player is stored with Floodgate's leading dot, so both forms count.
+on_whitelist() {  # $1 = list, $2 = bare gamertag
+  echo "$1" | grep -qxF "$2" || echo "$1" | grep -qxF ".$2"
+}
+
+CURRENT=$(read_whitelist)
 
 echo "server:  $(echo "$CURRENT" | grep -c . ) player(s)"
 
 # --- add what is missing ----------------------------------------------------
+# ADDED records who we TRIED to add, which is not the same as who got added —
+# that difference is the whole point of the verification pass below.
+ADDED=()
 if [ "$COUNT" -gt 0 ]; then
   for tag in "${!WANT[@]}"; do
-    # Bedrock players are stored with a leading dot, so compare both forms.
-    if echo "$CURRENT" | grep -qxF "$tag" || echo "$CURRENT" | grep -qxF ".$tag"; then
-      continue
-    fi
+    on_whitelist "$CURRENT" "$tag" && continue
     if [ "${WANT[$tag]}" = "bedrock" ]; then
       echo "+ $tag (bedrock)"
       mc "fwhitelist add $tag"
@@ -98,12 +140,22 @@ if [ "$COUNT" -gt 0 ]; then
       echo "+ $tag (java)"
       mc "whitelist add $tag"
     fi
+    ADDED+=("$tag")
   done
 fi
 
 # --- remove what is not in the roster ---------------------------------------
 while read -r name; do
   [ -z "$name" ] && continue
+  # Still "unknown" means it was added by UUID and has never joined, so
+  # usercache could not name it. Refusing to remove is the safe direction: the
+  # cost of keeping it is one stale allowlist entry, the cost of removing it is
+  # locking out a child who was correctly added. Say so rather than staying
+  # quiet — a name nobody can account for is worth a human look.
+  if [ "$name" = "unknown" ]; then
+    echo "? unknown (added by UUID, never joined — left alone; see RUNBOOK §3c)"
+    continue
+  fi
   bare=${name#.}
   [ -n "${WANT[$bare]:-}" ] && continue
   [ -n "${WANT[$name]:-}" ] && continue
@@ -119,5 +171,35 @@ if $DRY; then
 fi
 
 mc "whitelist reload" >/dev/null
+
+# --- verify the adds actually landed ----------------------------------------
+# Re-read the file rather than trusting the commands: see the ⚠️ at the top.
+# Only additions are checked. A removal that silently did nothing leaves someone
+# on the allowlist who should not be — worth knowing, but it does not lock a
+# child out of the server, and `whitelist remove` does not depend on any
+# third-party lookup the way `fwhitelist add` does.
+FAILED=()
+if [ "${#ADDED[@]}" -gt 0 ]; then
+  AFTER=$(read_whitelist)
+  for tag in "${ADDED[@]}"; do
+    on_whitelist "$AFTER" "$tag" || FAILED+=("$tag")
+  done
+fi
+
 echo "--- server now allows ---"
 docker exec minecraft rcon-cli "whitelist list"
+
+if [ "${#FAILED[@]}" -gt 0 ]; then
+  echo
+  echo "ERROR: ${#FAILED[@]} player(s) were NOT added despite the command running:"
+  for tag in "${FAILED[@]}"; do echo "  ✗ $tag (${WANT[$tag]})"; done
+  echo
+  echo "The add command reports nothing on failure, so here is the server log:"
+  docker exec minecraft tail -n 200 /data/logs/latest.log 2>/dev/null \
+    | grep -iE "floodgate|whitelist|xuid" | tail -n 10 | sed 's/^/  /'
+  echo
+  echo "A Bedrock player usually fails here because GeyserMC's public gamertag"
+  echo "-> XUID lookup could not answer. That is not something this server"
+  echo "controls. See 'player added but still rejected' in RUNBOOK §3c."
+  exit 1
+fi

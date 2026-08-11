@@ -110,6 +110,18 @@
       </div>
     </div>
 
+    <!-- How to connect. The address itself is DATA and is never translated
+         (A-7); only the labels around it come from the dictionary. Values are
+         injected at container start via config.js, because the agent talks to
+         the game over RCON and has no way to know what public name points at
+         it. -->
+    <div class="card connect">
+      <div class="card-head"><h2 data-i18n="connect.title"></h2></div>
+      <p class="muted sm" data-i18n="connect.sub"></p>
+      <details class="help"><summary data-i18n="help.open"></summary><p data-i18n="help.connect"></p></details>
+      <div class="connect-rows" id="connect-rows"></div>
+    </div>
+
     <div class="split">
       <div class="card">
         <div class="card-head">

@@ -1,5 +1,30 @@
 # Entrar al servidor desde PS5
 
+> # ⛔ PARÁ ACÁ — por ahora esta guía no sirve
+>
+> **Para entrar a este servidor desde una PS5 hace falta PlayStation Plus**, la
+> suscripción paga de Sony. Sin ella la consola no deja entrar a **ningún**
+> servidor de Minecraft, ni siquiera a uno privado como el nuestro.
+>
+> Esto **no lo podemos arreglar de nuestro lado**. No es un problema del
+> servidor, ni del DNS, ni de la lista de jugadores: lo decide Sony. Minecraft en
+> la PS5 sólo deja jugar en línea si hay PlayStation Plus.
+>
+> **No hagas los pasos de abajo.** Le vas a cambiar la configuración de red a la
+> consola para nada.
+>
+> ### Lo que sí funciona, gratis y sin ninguna suscripción
+>
+> **iPad, celular, y Minecraft en la compu** (tanto Bedrock como Java). Todo eso
+> entra al servidor sin pagar nada. La guía es
+> **[SETUP-IPAD-Y-PC.md](SETUP-IPAD-Y-PC.md)**.
+>
+> *Comprobado el 2026-08-11. El resto de esta guía queda escrita porque los pasos
+> son correctos y servirían si algún día hubiera PlayStation Plus — pero hasta
+> entonces no la sigas.*
+
+---
+
 Esta guía es para los papás y mamás que configuran la consola. Hay que hacerlo
 **una sola vez**. Después, entrar al servidor son tres clicks.
 
@@ -107,5 +132,8 @@ Concretamente:
   demás contesta "no soy yo, preguntale a otro", y ahí entra Cloudflare.
 - **Qué no hace:** no instala nada, no toca la cuenta de PlayStation, no ve
   contraseñas ni tráfico de la consola, y se deshace con un solo ajuste.
-- **Quién lo opera:** Helder, en un servidor propio. No hay terceros ni
-  servicios de pago en el medio.
+- **Quién lo opera:** Helder, en un servidor propio. No hay terceros en el medio,
+  y el servidor no cobra nada.
+- ⚠️ **Lo que sí cuesta plata:** PlayStation Plus, que Sony exige para jugar en
+  línea en la PS5. Eso es de Sony y es lo que hoy bloquea este camino — ver el
+  aviso del principio. Nuestro servidor sigue siendo gratis; la consola no.

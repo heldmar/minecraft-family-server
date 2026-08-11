@@ -297,6 +297,51 @@ input[type=file] { padding: 8px; background: #F4F7F0; }
 }
 .sm { font-size: 12px; }
 
+/* ---------- "How to join" (the address, for reading out to a friend) ----------
+   The address and port are values, not copy: they are rendered verbatim and
+   set in monospace so a 12-year-old reading them over a call doesn't lose a
+   character. The port sits in its own field rather than glued on as
+   `host:19133`, because Bedrock's UI has two separate boxes and pasting the
+   combined form into the address box is the classic way this fails. */
+.connect { margin-bottom: 14px; }
+.connect-rows { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+
+.connect-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px;
+  padding: 11px 13px;
+  background: #F4F8EF; border: 2px solid var(--line);
+  border-left: 5px solid var(--grass); border-radius: 10px;
+}
+.connect-what {
+  flex: 0 0 auto; min-width: 190px;
+  font-weight: 700; font-size: 13px; color: var(--ink);
+}
+.connect-vals { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; }
+.connect-field { display: flex; align-items: center; gap: 7px; }
+.connect-k {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--ink-soft); font-weight: 700;
+}
+.connect-v { font-family: var(--mono); font-size: 13.5px; user-select: all; }
+code.connect-v { background: #E6EFDD; padding: 3px 8px; border-radius: 6px; }
+.connect-v.is-none { color: var(--ink-soft); font-style: italic; user-select: none; }
+
+/* Blocked by something outside this server — today, the PS5 and PS Plus
+   (N-18). Deliberately not styled as an error: nothing is broken, and the
+   panel must not send MarNar looking for a fault he cannot find. */
+.connect-row.is-blocked {
+  background: #FAF6F6; border-left-color: var(--redstone);
+  opacity: .92;
+}
+.connect-row.is-blocked .connect-what { color: #7A3A3A; }
+.connect-blocked {
+  margin: 0; font-size: 12.5px; line-height: 1.55; color: #7A3A3A; max-width: 62ch;
+}
+
+@media (max-width: 700px) {
+  .connect-what { min-width: 100%; }
+}
+
 /* ---------- language switch (A-2) ---------- */
 /* Sits above the job overlay (z 50) on purpose. That overlay is modal-looking
    but not modal in spirit — it says "you can close this, the job keeps going" —

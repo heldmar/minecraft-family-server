@@ -189,6 +189,70 @@
     });
   }
 
+  // ---- how to connect ----------------------------------------------------
+  // Pure config, no API call. The agent speaks RCON to the container and has no
+  // idea which public hostname resolves to it, so this cannot be discovered —
+  // it comes from config.js (see docker-entrypoint.sh). Built here rather than
+  // written into index.html so the address exists once, and so the values can
+  // carry copy buttons: the whole point is reading it out to a friend.
+  //
+  // ⚠️ The address and port are DATA. They are rendered verbatim and never
+  // passed through the dictionary (A-7) — only the labels around them are.
+  var HOST = CFG.SERVER_HOST || "";
+  var BPORT = CFG.BEDROCK_PORT || "";
+
+  function copyBtn(value) {
+    return el("button", {
+      cls: "btn btn-ghost btn-sm",
+      text: t("connect.copy"),
+      onclick: function () {
+        var ok = function () { toast(t("connect.copied", { v: value })); };
+        var no = function () { toast(t("connect.copyFail"), true); };
+        // The clipboard API needs a secure context. The panel is HTTPS-only in
+        // its real deployment, but direct-LAN debug mode is plain HTTP, so this
+        // degrades to "copy it yourself" instead of failing silently (B-5).
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(value).then(ok, no);
+        } else { no(); }
+      }
+    });
+  }
+
+  function connectRow(whatKey, address, port, blockedKey) {
+    var what = el("div", { cls: "connect-what", text: t(whatKey) });
+
+    if (blockedKey) {
+      return el("div", { cls: "connect-row is-blocked" }, [
+        what,
+        el("p", { cls: "connect-blocked", text: t(blockedKey) })
+      ]);
+    }
+
+    var vals = el("div", { cls: "connect-vals" }, [
+      el("div", { cls: "connect-field" }, [
+        el("span", { cls: "connect-k", text: t("connect.addressLabel") }),
+        el("code", { cls: "connect-v", text: address }),
+        copyBtn(address)
+      ]),
+      el("div", { cls: "connect-field" }, [
+        el("span", { cls: "connect-k", text: t("connect.portLabel") }),
+        port ? el("code", { cls: "connect-v", text: port })
+             : el("span", { cls: "connect-v is-none", text: t("connect.noPort") }),
+        port ? copyBtn(port) : null
+      ])
+    ]);
+
+    return el("div", { cls: "connect-row" }, [what, vals]);
+  }
+
+  function renderConnect() {
+    var box = $("#connect-rows");
+    box.textContent = "";
+    box.appendChild(connectRow("connect.bedrockWhat", HOST, BPORT));
+    box.appendChild(connectRow("connect.javaWhat", HOST, ""));
+    box.appendChild(connectRow("connect.ps5What", "", "", "connect.ps5Blocked"));
+  }
+
   // ---- players -----------------------------------------------------------
   function loadPlayers() {
     return api("/players").then(function (data) {
@@ -454,6 +518,7 @@
     window.I18N.applyStatic();
     paintTitles();
     paintLangButtons();
+    renderConnect();
     renderJob(job && job.last);
     refreshAll();
   });
@@ -462,6 +527,7 @@
   window.I18N.applyStatic();
   paintTitles();
   paintLangButtons();
+  renderConnect();
 
   // If a job is already running (someone reloaded the page mid-regeneration,
   // or opened it on their phone) reattach to it instead of pretending the box
