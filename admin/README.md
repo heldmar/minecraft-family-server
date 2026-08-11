@@ -6,6 +6,13 @@ rare enough to be a runbook step.
 
 Live at <https://minecraft-admin.example.net>, behind an NPM Access List.
 
+> ⏳ **Pending, 2026-08-11:** the NPM proxy host for that hostname does not exist
+> yet, so the URL does not answer. Everything behind it is deployed and
+> verified. The NPM API cannot be scripted from this environment (the Bash
+> classifier refuses the call once the admin password is in it — the host's
+> the same constraint applies to Portainer), so it is filed with
+> the host's own notes as a manual proxy-configuration note.
+
 ---
 
 ## Shape
