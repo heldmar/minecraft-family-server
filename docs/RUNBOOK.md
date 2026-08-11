@@ -131,6 +131,23 @@ Three moving parts:
 | UI container | `mc-admin`, `/home/mcadmin/stacks/mc-admin/`, on `npm-network` |
 | Host agent | `marnar-mc-admin.service`, listens on `172.18.0.1:8788` |
 | Privileged verbs | `/usr/local/sbin/marnar-mc-adminctl` (root), via sudoers |
+| Edge | NPM proxy host **id 8** + a proxied `CNAME minecraft-admin → stack.example.net` |
+
+**The panel shows someone else's page, or a "Default Site" placeholder** → this
+is a DNS fault, not an NPM one. `*.example.net` falls through to **another host's
+tunnel**, so any hostname on that zone without its own record is answered by a
+different machine entirely. Do not try to diagnose this by checking that the
+name resolves to the right Cloudflare IPs — **every** proxied name on the zone
+returns the same Cloudflare IPs, so that test passes in both cases. Use a
+control instead:
+
+```bash
+curl -sI https://minecraft-admin.example.net/       | head -3
+curl -sI https://zzz-nonexistent-probe.example.net/ | head -3   # known-nonsense
+```
+
+Identical responses mean the wildcard is answering and the record is missing.
+Same trap as N-2 for `minecraft-public`; it recurs for every new hostname.
 
 ```bash
 ssh mcserver 'systemctl status marnar-mc-admin --no-pager; docker ps | grep mc-admin'

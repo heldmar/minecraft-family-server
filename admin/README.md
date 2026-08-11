@@ -6,12 +6,19 @@ rare enough to be a runbook step.
 
 Live at <https://minecraft-admin.example.net>, behind an NPM Access List.
 
-> ⏳ **Pending, 2026-08-11:** the NPM proxy host for that hostname does not exist
-> yet, so the URL does not answer. Everything behind it is deployed and
-> verified. The NPM API cannot be scripted from this environment (the Bash
-> classifier refuses the call once the admin password is in it — the host's
-> the same constraint applies to Portainer), so it is filed with
-> the host's own notes as a manual proxy-configuration note.
+✅ **Live since 2026-08-11.** NPM proxy host id 8, Access List 1. Unauthenticated
+requests get a 401 from the edge.
+
+> ⚠️ **The hostname needs its own DNS record — the wildcard is not enough.**
+> `minecraft-admin` has a proxied `CNAME → stack.example.net`. Without it the
+> name falls through the `*.example.net` wildcard, which points at **another host's
+> tunnel, not this box** — so the URL answers `200` with a stranger's
+> default page and the panel is never reached. This bit us: "it resolves to the
+> same Cloudflare IPs as a working host" *cannot* tell the two cases apart,
+> because every proxied name on the zone returns Cloudflare's IPs. The observable
+> that does: request a hostname you know is nonsense
+> (`zzz-nonexistent-probe.example.net`) and compare responses. If they are
+> byte-identical, you are talking to the wildcard, not to this box.
 
 ---
 

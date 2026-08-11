@@ -57,8 +57,8 @@ unaffected — it never types an address.
 restore backups, import or regenerate the world. Authentication is an NPM Access
 List; there is no user database, by decision. See [`admin/`](admin/README.md).
 
-⏳ Deployed and verified, but **not reachable yet** — the NPM proxy host for that
-hostname is a manual UI step, filed as a manual step.
+✅ Live since 2026-08-11 — NPM proxy host id 8, Access List 1, 401 to anyone
+without the credential.
 
 ## Why not the Pi
 
