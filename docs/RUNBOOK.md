@@ -75,8 +75,7 @@ git commit -am "Add <name> to the allowlist"
 
 # 3. deploy
 scp players/allowlist.txt mcserver:/home/mcadmin/stacks/minecraft/roster/allowlist.txt
-ssh mcserver 'sudo ROSTER=/home/mcadmin/stacks/minecraft/roster/allowlist.txt \
-  /usr/local/sbin/marnar-mc-sync-players --dry-run'   # check, then drop --dry-run
+ssh mcserver 'sudo marnar-mc-sync-players --dry-run'   # check, then drop --dry-run
 ```
 
 Removing someone is the same flow: delete their line and sync. The sync removes

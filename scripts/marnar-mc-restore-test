@@ -40,13 +40,18 @@ fi
 [ -f "$WORK/world/level.dat" ] || { log "FAIL: no world/level.dat in archive"; exit 1; }
 log "unpacked; world/level.dat present"
 
-# Same image as production, or the test proves nothing about production.
+# Same image AND same version as production, read from the live container rather
+# than hardcoded — a test that silently drifts to a different Minecraft version
+# than the one running proves nothing about the backup you actually have.
 IMAGE=$(docker inspect minecraft --format '{{.Config.Image}}')
+VERSION=$(docker inspect minecraft --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^VERSION=//p')
+[ -n "$VERSION" ] || { log "ERROR: could not read VERSION from the live container"; exit 1; }
+log "using image $IMAGE at Minecraft $VERSION"
 chown -R 1000:1000 "$WORK"
 
 log "booting a throwaway server against the restored world"
 docker run -d --name "$NAME" \
-  -e EULA=TRUE -e TYPE=PAPER -e VERSION=26.2 -e MEMORY=768M \
+  -e EULA=TRUE -e TYPE=PAPER -e VERSION="$VERSION" -e MEMORY=768M \
   -e UID=1000 -e GID=1000 -e ONLINE_MODE=FALSE \
   -e SKIP_SUDO=TRUE \
   --memory 1g --cpu-shares 128 \

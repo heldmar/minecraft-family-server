@@ -17,7 +17,17 @@
 # "not white-listed" kick with nothing in the log to explain it.
 set -uo pipefail
 
-ROSTER=${ROSTER:-$(dirname "$0")/../players/allowlist.txt}
+# Two homes, so the same script works from a checkout and from /usr/local/sbin:
+# the repo copy sits next to players/, the deployed copy is scp'd to the stack
+# directory. Explicit ROSTER= wins over both.
+DEPLOYED=/home/mcadmin/stacks/minecraft/roster/allowlist.txt
+if [ -z "${ROSTER:-}" ]; then
+  if [ -f "$(dirname "$0")/../players/allowlist.txt" ]; then
+    ROSTER=$(dirname "$0")/../players/allowlist.txt
+  else
+    ROSTER=$DEPLOYED
+  fi
+fi
 DRY=false
 [ "${1:-}" = "--dry-run" ] && DRY=true
 
