@@ -278,7 +278,7 @@ Core requirement: **only explicitly approved people can connect.**
 | **Q-7** | Is an offsite copy of the world backup wanted, or is the boot volume sufficient? | O-4 |
 | ~~Q-9~~ | ~~Confirm difficulty and dimensions.~~ **Resolved 2026-08-10: Normal difficulty, Nether and End both enabled.** | — |
 | **Q-11** | Is ~134 ms latency acceptable to MarNar in practice? Worth a real test before inviting friends. | §4.2 |
-| **Q-12** | Should the world be seeded fresh, or is there an existing world to import? | F-1 |
+| **Q-12** | Should the world be seeded fresh, or is there an existing world to import? ⚠️ **Answered by default, and it is now costly to change.** A fresh world was generated with seed **`1944975880419099066`** and pre-generated to the 3000-block border. Importing a different world after this point means discarding that work and re-running pre-generation (~1h per dimension on this box). If there *is* an existing world to bring over, say so before anyone starts building. | F-1 |
 
 ---
 
