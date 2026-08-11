@@ -1,8 +1,10 @@
 # MarNar Minecraft — Requirements
 
-> **Status:** Draft v2 — host changed from the Pi to a cloud VM after the Pi proved
-> unreachable from the internet. Implementation not started.
-> **Date:** 2026-08-10
+> **Status:** v2 — **built and running on a cloud VM** (host changed from the Pi after
+> the Pi proved unreachable from the internet). Requirements are annotated inline with what was
+> met, when, and the evidence. Not yet opened to players: the allowlist is deliberately empty
+> (A-1a) and the PS5 path has not been walked on a real console.
+> **Date:** 2026-08-10, implementation same day
 > **Owner:** Helder Martins
 > **Host:** a single Linux VM with Docker.
 
@@ -159,10 +161,10 @@ The single vCPU, shared with nine containers, is the binding constraint.
 | **P-2** | JVM heap fixed at **`-Xms1536M -Xmx1536M`** (equal min/max to avoid resize pauses), with Aikar's G1GC flags. |
 | **P-3** | The JVM SHALL NOT swap. Memory pressure is an incident, not something to absorb. |
 | **P-4** | `view-distance` **6**, `simulation-distance` **4**. |
-| **P-5** | A **world border** (initial target 3000 blocks) to bound disk growth and chunk generation. |
-| **P-6** | The world SHALL be **pre-generated** to the border (e.g. Chunky) before players are invited. **This is the single most important requirement in this section** — chunk generation is the dominant CPU spike, and on a shared single core it is what would stall the other sites. Pre-generating moves that cost to a controlled window. |
-| **P-7** | Tick rate **≥ 18 TPS** with 4 players online in pre-generated terrain. |
-| **P-8** | ⚠️ **CPU contention with the existing tenants SHALL be measured before the server is opened to friends.** The other tenants share this core. If Minecraft degrades them, the resolution is P-9, not silence. |
+| **P-5** | A **world border** (initial target 3000 blocks) to bound disk growth and chunk generation. **Met 2026-08-10**: overworld 3000, End 3000, **Nether 375**. The Nether is overworld ÷ 8 on purpose — Nether coordinates are 1:8, so 375 makes every in-border overworld location reachable by portal and nothing beyond it. Setting the Nether to 3000 as well would have quietly allowed travel to 24,000 in the overworld. |
+| **P-6** | The world SHALL be **pre-generated** to the border (e.g. Chunky) before players are invited. **This is the single most important requirement in this section** — chunk generation is the dominant CPU spike, and on a shared single core it is what would stall the other sites. Pre-generating moves that cost to a controlled window. **Met 2026-08-10**, all three dimensions: overworld 35,721 chunks in 39:46 (~17 cps), Nether 625 chunks in 0:29, End 35,721 chunks in 5:39 (~100 cps — the End is mostly void, so it generates fast). Total ~46 min, run overnight with no players. |
+| **P-7** | Tick rate **≥ 18 TPS** with 4 players online in pre-generated terrain. **Partially verified 2026-08-10**: TPS held at **19.3–20.0 throughout pre-generation**, which is a far heavier load than four children playing — but with **zero players online**. The requirement as written needs 4 real players and cannot be closed until they exist. The margin observed makes it very likely to pass. |
+| **P-8** | ⚠️ **CPU contention with the existing tenants SHALL be measured before the server is opened to friends.** The other tenants share this core. If Minecraft degrades them, the resolution is P-9, not silence. **Measured 2026-08-10 under pre-generation**, i.e. the heaviest this tenant will ever be: load average 0.94–2.01 on 1 vCPU, `minecraft` at 82% CPU and every other container ≤13%, `othersite.example.com` served **200 in 0.98s** during it. Memory is the tighter constraint, not CPU — the container runs near its 2 GiB cap by design, leaving ~1.7 GiB free on the box. All three new containers run at `cpu_shares` below the default so the existing tenants win contention. |
 | **P-9** | If contention proves unacceptable, the documented options are: reduce further (2–3 players, view-distance 4), apply Docker CPU weighting so Minecraft yields under load, or revisit the 2 vCPU resize with a boot-volume backup first. |
 | **P-10** | No performance-heavy mods or plugins. The plugin set is Geyser, Floodgate, and operational plugins (backup, pre-gen) only, unless re-evaluated against P-7. |
 | **P-11** | Running Minecraft raises sustained CPU utilisation, which **helps** against the provider's idle-instance reclamation. A welcome side effect, not a design goal. |
@@ -247,10 +249,10 @@ Core requirement: **only explicitly approved people can connect.**
 | **O-1** | Deployment SHALL be a **Docker Compose stack** versioned in this repo, deployed **CLI-first** to `/home/mcadmin/stacks/`, per the host's rules. **Not** via the Portainer UI. |
 | **O-2** | A documented procedure SHALL exist for **Bedrock-client-update breakage**: when Mojang updates the Bedrock client, Geyser must be updated before players can rejoin. Expected and recurring, not an incident. |
 | **O-3** | Images SHALL be **pinned** (never `latest`) and SHALL have a real `arm64`/`aarch64` manifest. |
-| **O-4** | World backups SHALL run **daily**, retaining ≥14 dailies and 4 weeklies. |
-| **O-5** | A restore SHALL be **tested once** before the server is opened to friends. An untested backup is not a backup. |
+| **O-4** | World backups SHALL run **daily**, retaining ≥14 dailies and 4 weeklies. **Met 2026-08-10**: `marnar-mc-backup.timer` at 04:00, `save-off`/`save-all flush` around the copy with an EXIT trap that re-enables saving on every exit path. Fully generated world archives to **283 MB**, so 18 retained copies cost ~5 GB against 159 GB free. |
+| **O-5** | A restore SHALL be **tested once** before the server is opened to friends. An untested backup is not a backup. **Met 2026-08-10**: `marnar-mc-restore-test` unpacked the archive, booted a second throwaway Paper container against it on the same image and version with no ports published, and it reported `Done (31.676s)`. Then deleted itself. Worth noting the first backup attempt *failed* — it named `world_nether`/`world_the_end`, which Paper 26.x no longer uses — which is this requirement earning its place. |
 | **O-6** | The server SHALL be **always-on**, restarting automatically on host reboot (`restart: unless-stopped`). |
-| **O-6a** | A **scheduled nightly restart** SHALL clear JVM memory pressure and heap fragmentation. It SHALL warn players online and force a world save first. |
+| **O-6a** | A **scheduled nightly restart** SHALL clear JVM memory pressure and heap fragmentation. It SHALL warn players online and force a world save first. **Met 2026-08-10**: `marnar-mc-restart.timer` at 05:00, warning at 60/30/10 seconds in Spanish, then `save-all flush`, then restart. |
 | **O-7** | Server health SHOULD be visible via a documented check. |
 | **O-8** | Player-facing setup guides (N-17) SHALL live in this repo under `docs/`. |
 | **O-9** | Disk growth SHALL be monitored; the world border (P-5) is the primary control. |
