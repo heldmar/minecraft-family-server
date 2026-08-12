@@ -76,8 +76,12 @@ el servidor los distingue.
 Casi siempre es el puerto. Editá el servidor guardado y verificá que diga
 `19133`.
 
-**Entra y lo saca enseguida**
+**Entra y lo saca enseguida ("You are not whitelisted on this server")**
 El gamertag no está en la lista todavía. Mandáselo a Helder.
+
+Y si ya se lo mandaste y sigue pasando: **volvé a intentar entrar una vez más y
+avisale.** No es magia — el intento fallido es justamente lo que le permite al
+servidor reconocer el gamertag. Después de eso Helder lo agrega y entra.
 
 **"Versión incompatible" / "Outdated client" o "Outdated server"**
 Se actualizó Minecraft y el servidor todavía no. Avisale a Helder; es esperable

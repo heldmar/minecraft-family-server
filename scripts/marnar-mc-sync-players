@@ -29,6 +29,15 @@
 # as unsynced and nothing said why. Every add is therefore VERIFIED against
 # whitelist.json afterwards and an unverified add is a hard failure — see
 # "player added but still rejected" in RUNBOOK §3c.
+#
+# ⚠️ GeyserMC's gamertag -> XUID endpoint answers ONLY for gamertags it has
+# already cached. Re-measured 2026-08-11: `Notch` and `examplegamertag` return 200
+# because they are cached, while `Dinnerbone`, `jeb_` and `CaptainSparklez` — all
+# real accounts — return 503 "Unable to find user in our cache". A gamertag that
+# does not exist at all returns the SAME 503, so the endpoint tells us nothing
+# about whether a name is valid. In practice this means every genuinely NEW
+# friend fails the normal add. That is why the fallback below exists: without it
+# this tool can only add players it has already added.
 set -uo pipefail
 
 # One home: the server. ROSTER= overrides it, which is how marnar-mc-adminctl
@@ -36,6 +45,16 @@ set -uo pipefail
 # error — an empty roster is the state this server was commissioned in.
 ROSTER=${ROSTER:-/home/mcadmin/stacks/minecraft/roster/allowlist.txt}
 mkdir -p "$(dirname "$ROSTER")"
+
+# Floodgate stores a player added BY UUID under the literal name "unknown",
+# because it never saw a gamertag. Paper only learns the real name once that
+# player joins, and never writes it back into whitelist.json. Until then nothing
+# on the server can say who that entry is — which previously meant the removal
+# pass had to leave every "unknown" alone, so a player added this way could not
+# be removed by taking them off the roster. So record the mapping ourselves at
+# the moment we do the add. Lives beside the roster: same reasoning as F-10a
+# (it is who plays here, not how the server is built), and the same backup.
+UUIDMAP=${UUIDMAP:-$(dirname "$ROSTER")/floodgate-uuids.tsv}
 [ -f "$ROSTER" ] || cat > "$ROSTER" <<'SEED'
 # Who may join MarNar's Minecraft Server. One player per line:
 #
@@ -108,7 +127,12 @@ read_whitelist() {
     uuid=$(printf '%s' "$entry" | grep -o '"uuid"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')
     name=$(printf '%s' "$entry" | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')
     if [ "$name" = "unknown" ] && [ -n "$uuid" ]; then
-      resolved=$(printf '%s\n' "$uc" | grep -F "\"$uuid\"" \
+      # Our own map first: it knows the name from the moment of the add, whereas
+      # usercache only learns it at first join. usercache stays as the second
+      # source because it also covers entries made before the map existed, and
+      # because it is the server's own record rather than ours.
+      resolved=$(grep -F "$uuid"$'\t' "$UUIDMAP" 2>/dev/null | head -1 | cut -f2)
+      [ -z "$resolved" ] && resolved=$(printf '%s\n' "$uc" | grep -F "\"$uuid\"" \
                  | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' \
                  | sed 's/.*"\([^"]*\)"$/\1/' | head -1)
       [ -n "$resolved" ] && name=$resolved
@@ -120,6 +144,115 @@ read_whitelist() {
 # A Bedrock player is stored with Floodgate's leading dot, so both forms count.
 on_whitelist() {  # $1 = list, $2 = bare gamertag
   echo "$1" | grep -qxF "$2" || echo "$1" | grep -qxF ".$2"
+}
+
+# The UUIDs currently on the whitelist, for verifying an add that was made BY
+# uuid — such an entry is named "unknown" until the player first joins, so
+# checking it by name would report a working add as a failure.
+whitelist_uuids() {
+  docker exec minecraft cat /data/whitelist.json 2>/dev/null \
+    | grep -o '"uuid"[[:space:]]*:[[:space:]]*"[^"]*"' \
+    | sed 's/.*"\([^"]*\)"$/\1/'
+}
+
+# --- fallback: resolve a gamertag ourselves ---------------------------------
+# Used only when `fwhitelist add <gamertag>` has already been tried and failed,
+# i.e. when GeyserMC could not resolve the name. playerdb.co queries Xbox Live
+# directly instead of serving from a cache, so it answers for players GeyserMC
+# has never seen.
+#
+# ⚠️ This is a SECOND external dependency in the path that decides who may enter
+# the server, so it is not trusted blindly:
+#
+#   * every answer must be HTTP 200 with code "player.found" and an all-digit id
+#     in the range real XUIDs occupy;
+#   * before the first real lookup of a run, playerdb is asked for a CONTROL
+#     gamertag whose XUID is known independently (GeyserMC has `Notch` cached,
+#     and returns 2535453759792258). If the control disagrees, the fallback is
+#     refused for the whole run. This check can actually fail — it is what
+#     catches playerdb answering with a placeholder, a redirect page, or another
+#     player's id — which is the reason it is worth the request it costs.
+#
+# ⚠️ playerdb rate-limits hard: measured 2026-08-11, the third request in quick
+# succession returned 429 and stayed there for minutes. So the control is run
+# ONCE per invocation and memoised, giving 1 + (players being added) requests.
+# A 429 is reported as "try again in a few minutes", never as a bad gamertag.
+CONTROL_TAG=Notch
+CONTROL_XUID=2535453759792258
+CONTROL_STATE=unchecked   # unchecked | ok | failed
+CONTROL_ERR=""
+
+# Why the last lookup failed, so the summary at the end can say something true
+# rather than guessing. "rate limited" and "that gamertag does not exist" call
+# for opposite actions from whoever is reading.
+#
+# ⚠️ The result comes back in XUID_RESULT rather than on stdout, and that is
+# deliberate: `x=$(playerdb_xuid ...)` runs the function in a SUBSHELL, so
+# LAST_ERR would be set in a process that exits immediately and every failure
+# would be reported as "no reason recorded". Measured, not theorised.
+LAST_ERR=""
+XUID_RESULT=""
+
+playerdb_xuid() {  # $1 = gamertag; sets XUID_RESULT, or sets LAST_ERR and returns 1
+  local tag=$1 body code xuid
+  LAST_ERR=""; XUID_RESULT=""
+  body=$(curl -sS --max-time 20 -w '\n%{http_code}' \
+         "https://playerdb.co/api/player/xbox/$tag" 2>/dev/null)
+  code=${body##*$'\n'}
+  body=${body%$'\n'*}
+  case "$code" in
+    200) ;;
+    429) LAST_ERR="the lookup service is rate-limiting us — wait a few minutes and run the sync again; nothing is wrong with the gamertag" ;;
+    "")  LAST_ERR="no response from the lookup service (can the server reach the internet?)" ;;
+    *)   LAST_ERR="the lookup service answered HTTP $code" ;;
+  esac
+  [ -n "$LAST_ERR" ] && { echo "    $LAST_ERR" >&2; return 1; }
+  case "$body" in
+    *'"player.found"'*) ;;
+    *) LAST_ERR="no Xbox account by that name — check the spelling, and check it is the XBOX/Microsoft name and not the PlayStation one"
+       echo "    $LAST_ERR" >&2; return 1 ;;
+  esac
+  # "id" appears once per player object and holds the XUID as a string.
+  xuid=$(printf '%s' "$body" | grep -o '"id"[[:space:]]*:[[:space:]]*"[0-9]*"' \
+         | sed 's/.*"\([0-9]*\)"$/\1/' | head -1)
+  # Real XUIDs are 16 digits. Anything else is not something to hand to a
+  # command that grants server access.
+  if [ "${#xuid}" -ne 16 ]; then
+    LAST_ERR="the lookup service answered 200 but with no usable 16-digit XUID"
+    echo "    $LAST_ERR" >&2; return 1
+  fi
+  XUID_RESULT=$xuid
+}
+
+playerdb_trustworthy() {
+  case "$CONTROL_STATE" in
+    ok) return 0 ;;
+    failed) LAST_ERR=$CONTROL_ERR; return 1 ;;
+  esac
+  echo "    checking the lookup service against a known answer ($CONTROL_TAG)..."
+  if ! playerdb_xuid "$CONTROL_TAG"; then
+    CONTROL_STATE=failed; CONTROL_ERR=$LAST_ERR; return 1
+  fi
+  if [ "$XUID_RESULT" != "$CONTROL_XUID" ]; then
+    echo "    ✗ control FAILED: it says $CONTROL_TAG is $XUID_RESULT, but it is $CONTROL_XUID."
+    echo "      Refusing to let it decide who may join. Add by hand instead (RUNBOOK §3c)"
+    echo "      after checking what that service is actually returning."
+    CONTROL_STATE=failed
+    CONTROL_ERR="the lookup service failed a known-answer control check and is not being trusted"
+    LAST_ERR=$CONTROL_ERR
+    return 1
+  fi
+  CONTROL_STATE=ok
+}
+
+# A Floodgate UUID is the XUID sitting in the low bits of an otherwise-zero
+# UUID. Verified 2026-08-11 against the server's own log: xuid
+# 2535453759792258 -> 00000000-0000-0000-0009-01fb54b26482, which is the UUID
+# Floodgate itself recorded when that player joined.
+floodgate_uuid() {  # $1 = xuid
+  local h
+  h=$(printf '%016x' "$1")
+  printf '00000000-0000-0000-%s-%s' "${h:0:4}" "${h:4:12}"
 }
 
 CURRENT=$(read_whitelist)
@@ -153,14 +286,24 @@ while read -r name; do
   # locking out a child who was correctly added. Say so rather than staying
   # quiet — a name nobody can account for is worth a human look.
   if [ "$name" = "unknown" ]; then
-    echo "? unknown (added by UUID, never joined — left alone; see RUNBOOK §3c)"
+    echo "? unknown (added by UUID, never joined, and not in $UUIDMAP — left alone; see RUNBOOK §3c)"
     continue
   fi
   bare=${name#.}
   [ -n "${WANT[$bare]:-}" ] && continue
   [ -n "${WANT[$name]:-}" ] && continue
   echo "- $name (not in roster)"
-  mc "whitelist remove $name"
+  # If the name came from our UUID map, the entry on the server is still called
+  # "unknown", and removing it by name does nothing: `whitelist remove <uuid>`
+  # answers "That player does not exist" and leaves the entry in place, while
+  # `fwhitelist remove <uuid>` removes it. Both measured 2026-08-11. Silently
+  # removing nothing here would leave an ex-player able to join.
+  rm_uuid=$(awk -F'\t' -v n="$bare" '$2==n{print $1; exit}' "$UUIDMAP" 2>/dev/null)
+  if [ -n "$rm_uuid" ]; then
+    mc "fwhitelist remove $rm_uuid"
+  else
+    mc "whitelist remove $name"
+  fi
   # Removing from the whitelist does not disconnect someone already playing.
   mc "kick $name Ya no estas en la lista del servidor"
 done <<< "$CURRENT"
@@ -186,20 +329,90 @@ if [ "${#ADDED[@]}" -gt 0 ]; then
   done
 fi
 
+# --- second attempt: resolve the gamertag ourselves -------------------------
+# A Bedrock name that failed above failed because GeyserMC could not resolve it,
+# which is the normal outcome for anyone new. Resolve it independently and add
+# by Floodgate UUID, which is the one form of `fwhitelist add` that does not
+# depend on GeyserMC. (`fwhitelist add <uuid> <gamertag>` and passing the raw
+# XUID both fail silently — only the bare UUID works. Verified 2026-08-11.)
+RETRIED=()      # tags added by uuid this run, verified by uuid not by name
+STILL_FAILED=()
+declare -A WHY  # tag -> why it could not be added, in words the reader can act on
+if [ "${#FAILED[@]}" -gt 0 ]; then
+  echo
+  echo "--- ${#FAILED[@]} add(s) did not take; resolving those gamertags directly ---"
+  for tag in "${FAILED[@]}"; do
+    if [ "${WANT[$tag]}" != "bedrock" ]; then
+      # A Java name is resolved by Mojang inside the server; there is no second
+      # route to try, and a failure here means the account name is wrong.
+      STILL_FAILED+=("$tag")
+      WHY[$tag]="Mojang does not know that Java account name"
+      continue
+    fi
+    echo "  $tag:"
+    playerdb_trustworthy || { STILL_FAILED+=("$tag"); WHY[$tag]=$LAST_ERR; continue; }
+    playerdb_xuid "$tag" || { STILL_FAILED+=("$tag"); WHY[$tag]=$LAST_ERR; continue; }
+    uuid=$(floodgate_uuid "$XUID_RESULT")
+    echo "    xuid $XUID_RESULT -> $uuid"
+    docker exec minecraft rcon-cli "fwhitelist add $uuid" >/dev/null
+    # Record who this UUID is before anything can go wrong, so the entry is
+    # never anonymous on disk. Replace any previous line for the same UUID.
+    touch "$UUIDMAP"
+    grep -vF "$uuid"$'\t' "$UUIDMAP" > "$UUIDMAP.tmp" 2>/dev/null || :
+    printf '%s\t%s\n' "$uuid" "$tag" >> "$UUIDMAP.tmp"
+    mv "$UUIDMAP.tmp" "$UUIDMAP"
+    RETRIED+=("$tag:$uuid")
+  done
+  docker exec minecraft rcon-cli "whitelist reload" >/dev/null
+  # Verify by UUID: the entry is named "unknown" on the server until the player
+  # first joins, so a name check would call a working add a failure.
+  if [ "${#RETRIED[@]}" -gt 0 ]; then
+    UUIDS_NOW=$(whitelist_uuids)
+    for pair in "${RETRIED[@]}"; do
+      if ! printf '%s\n' "$UUIDS_NOW" | grep -qxF "${pair#*:}"; then
+        STILL_FAILED+=("${pair%%:*}")
+        WHY[${pair%%:*}]="the gamertag resolved, but the server did not accept the add"
+      fi
+    done
+  fi
+fi
+
 echo "--- server now allows ---"
 docker exec minecraft rcon-cli "whitelist list"
 
-if [ "${#FAILED[@]}" -gt 0 ]; then
+if [ "${#STILL_FAILED[@]}" -gt 0 ]; then
   echo
-  echo "ERROR: ${#FAILED[@]} player(s) were NOT added despite the command running:"
-  for tag in "${FAILED[@]}"; do echo "  ✗ $tag (${WANT[$tag]})"; done
+  echo "ERROR: ${#STILL_FAILED[@]} player(s) were NOT added. Both routes were"
+  echo "tried — GeyserMC's cached lookup, then a direct one — and why each failed:"
+  for tag in "${STILL_FAILED[@]}"; do
+    echo "  ✗ $tag (${WANT[$tag]}): ${WHY[$tag]:-no reason recorded}"
+  done
+  echo
+  echo "WHAT TO DO — this almost always works and needs nobody's help:"
+  echo
+  echo "  1. Ask the player to try to join the server ONCE, exactly as if they"
+  echo "     were already allowed. They will be turned away with \"You are not"
+  echo "     whitelisted on this server\". That is expected — let it happen."
+  echo "  2. Run this sync again."
+  echo
+  echo "GeyserMC can only answer for gamertags it has already seen, and a player"
+  echo "connecting is what makes it see them. Observed 2026-08-11: examplegamertag"
+  echo "returned \"not in our cache\" to repeated lookups all afternoon, and"
+  echo "answered normally once he had actually connected. Looking a name up does"
+  echo "not put it in the cache; connecting does."
   echo
   echo "The add command reports nothing on failure, so here is the server log:"
   docker exec minecraft tail -n 200 /data/logs/latest.log 2>/dev/null \
     | grep -iE "floodgate|whitelist|xuid" | tail -n 10 | sed 's/^/  /'
   echo
-  echo "A Bedrock player usually fails here because GeyserMC's public gamertag"
-  echo "-> XUID lookup could not answer. That is not something this server"
-  echo "controls. See 'player added but still rejected' in RUNBOOK §3c."
+  echo "See 'player added but still rejected' in RUNBOOK §3c."
   exit 1
+fi
+
+if [ "${#RETRIED[@]}" -gt 0 ]; then
+  echo
+  echo "note: ${#RETRIED[@]} player(s) were added by Floodgate UUID because"
+  echo "GeyserMC could not resolve their gamertag. They can join normally. The"
+  echo "server shows them as \"unknown\" until their first login; this tool knows"
+  echo "who they are either way ($UUIDMAP)."
 fi

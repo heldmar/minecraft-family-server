@@ -30,17 +30,17 @@ allowlist tooling are in place. World pre-generation is in progress.
 > [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) §7.1 / N-18, and
 > [`docs/SETUP-PS5.md`](docs/SETUP-PS5.md) for the console guide.
 
-One thing stands between here and inviting people:
+**Adding a friend works.** It is worth knowing why it needs two tries in the
+worst case: GeyserMC's gamertag→XUID lookup only answers for players it has
+already seen connect, so a genuinely new friend cannot be resolved by name. If
+the normal add does not take, the sync resolves the gamertag independently and
+adds them by Floodgate UUID, reporting exactly what happened either way. The
+route that always works and depends on nobody: **have them try to join once,
+get turned away, then run the sync** — the attempt itself is what makes them
+resolvable. See [`docs/RUNBOOK.md`](docs/RUNBOOK.md) §3c.
 
-**Adding a Bedrock player by gamertag currently fails upstream.** GeyserMC's
-gamertag→XUID lookup answers only for names it has already cached, so a new
-friend cannot be added the normal way while that lasts. The sync reports this
-loudly instead of pretending to succeed, and there is a working manual
-route — [`docs/RUNBOOK.md`](docs/RUNBOOK.md) §3c. MarNar is on the allowlist by
-that route; everyone else still has to go through it.
-
-The allowlist itself was commissioned **on, enforced and empty**, including for
-MarNar, so there was never a window where the server was reachable and open. Add
+The allowlist was commissioned **on, enforced and empty**, including for MarNar,
+so there was never a window where the server was reachable and open. Add
 gamertags in the [admin panel](admin/README.md).
 
 Start here: **[`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md)** for what was

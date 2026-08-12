@@ -27,6 +27,10 @@ DATA=$STACK/data
 WORLD=$DATA/world
 ROSTER=$STACK/roster/allowlist.txt
 AUDIT=$STACK/roster/audit.log
+# Written by marnar-mc-sync-players when it adds someone by Floodgate UUID; read
+# here so the panel can name that player before their first login. Keep the path
+# in step with UUIDMAP in that script.
+UUIDMAP=$STACK/roster/floodgate-uuids.tsv
 BACKUPS=/home/mcadmin/backups/minecraft
 COMPOSE="docker compose -f $STACK/docker-compose.yml"
 
@@ -124,8 +128,9 @@ EOF
 # not even after that player joins successfully. Matching the roster against
 # those raw names would report somebody who is demonstrably in the game as "sin
 # sincronizar" — precisely the "I added him and he still can't join" confusion
-# verb_players_list exists to prevent. usercache.json carries the UUID ->
-# gamertag mapping once they have joined once, so translate through it.
+# verb_players_list exists to prevent. Two sources carry the UUID -> gamertag
+# mapping: the sync tool's own map, written at the moment of the add, and
+# usercache.json, which the server fills in once that player has joined once.
 #
 # Kept deliberately in step with read_whitelist() in marnar-mc-sync-players; if
 # one changes, change both. A top-level function rather than an inline loop
@@ -139,7 +144,8 @@ whitelist_names() {
     uuid=$(printf '%s' "$entry" | grep -o '"uuid"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')
     name=$(printf '%s' "$entry" | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')
     if [ "$name" = "unknown" ] && [ -n "$uuid" ]; then
-      resolved=$(printf '%s\n' "$uc" | grep -F "\"$uuid\"" \
+      resolved=$(grep -F "$uuid"$'\t' "$UUIDMAP" 2>/dev/null | head -1 | cut -f2)
+      [ -z "$resolved" ] && resolved=$(printf '%s\n' "$uc" | grep -F "\"$uuid\"" \
                  | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' \
                  | sed 's/.*"\([^"]*\)"$/\1/' | head -1)
       [ -n "$resolved" ] && name=$resolved

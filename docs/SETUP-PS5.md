@@ -107,6 +107,10 @@ prendiendo la consola.
 Casi seguro el gamertag todavía no está en la lista. Mandale a Helder el
 gamertag exacto, con mayúsculas y espacios como aparece en el juego.
 
+Si ya se lo mandaste y sigue pasando: **probá entrar una vez más y avisale.** El
+intento que falla es justamente lo que le permite al servidor reconocer el
+gamertag; después de eso Helder lo agrega y entra.
+
 **Anda el servidor pero la consola perdió internet para todo lo demás**
 Faltó el DNS secundario. Volvé a la Parte 1, punto 7.
 

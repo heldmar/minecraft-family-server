@@ -233,40 +233,76 @@ Unable to find user in our cache. Please try specifying their Floodgate UUID ins
 ```
 
 Since 2026-08-11 `marnar-mc-sync-players` **verifies every add against
-`whitelist.json` afterwards and exits 1** with that log excerpt if it did not
-land, so this should announce itself rather than being found by a child who
-cannot get in. Before that fix it printed `+ examplegamertag (bedrock)` and exited
-clean while the allowlist stayed empty.
+`whitelist.json` afterwards**, and when the normal add did not land it tries a
+second route by itself (below) before exiting 1 with that log excerpt. So this
+should announce itself rather than being found by a child who cannot get in.
+Before that fix it printed `+ examplegamertag (bedrock)` and exited clean while the
+allowlist stayed empty.
 
-**Checking whether the lookup is the problem.** Query the API directly. Read the
-status code, not the message — the message says "cache" in cases that are not
-about the gamertag at all:
+### ⚠️ GeyserMC only knows gamertags that have already connected
 
-```bash
-curl -s -o /dev/null -w "%{http_code}\n" https://api.geysermc.org/v2/xbox/xuid/THEIRGAMERTAG
-curl -s -o /dev/null -w "%{http_code}\n" https://api.geysermc.org/v2/xbox/xuid/Notch   # control
-```
+This is the root cause, and it is not an outage — it is how the endpoint works.
+**Re-measured 2026-08-11:**
 
-| Code | Means |
+| Gamertag | Result |
 |---|---|
-| **200** | Resolved. The gamertag is fine and the lookup works — the fault is elsewhere. |
-| **400** | The gamertag is invalid. Check spelling, and that it is the **Xbox** name, not the PlayStation one. |
-| **503** | Valid name, but GeyserMC has no cached XUID and its live Xbox lookup is down. |
+| `Notch`, `examplegamertag` | **200**, resolved |
+| `Dinnerbone`, `jeb_`, `CaptainSparklez` — all real accounts | **503** "Unable to find user in our cache" |
+| `qzzxwvyu9911` — does not exist | **503**, *the same answer* |
+| a name longer than 16 chars | **400** "gamertag is empty or longer than 16 chars" |
 
-The control matters: a 503 on your player **and** 200 on `Notch` means the
-service is up and simply cannot resolve anyone new. That was the state on
-2026-08-11 — `Notch` returned 200, a nonsense gamertag returned 400, and both
-`examplegamertag` and an unrelated real gamertag returned 503, three times running.
+Two things follow, and both correct what this section said earlier:
 
-⚠️ **While this is happening, no new Bedrock player can be added by gamertag** —
-not just the one you noticed. It is entirely outside this server; there is
-nothing to fix here and nothing that will fix it faster. Java players are
-unaffected, since `whitelist add` uses Mojang's lookup instead.
+- **A 503 tells you nothing about whether the gamertag is real.** A nonexistent
+  name and a perfectly good one give the identical response. Do not read 503 as
+  "the service is down" or as "the name is fine".
+- **400 is a length/format rejection only**, not a general "invalid gamertag".
 
-### The workaround: add them by Floodgate UUID
+**So every genuinely new friend fails the first add**, by design, and `Notch` is
+a useless control — it passes because it is cached, which is exactly the state
+your new player is not in.
 
-Floodgate's error names the way out, and this route **worked on 2026-08-11** —
-MarNar was playing within minutes of it. It skips the gamertag lookup entirely.
+### The fix that needs nobody's help: have them try once
+
+**Observed 2026-08-11:** `examplegamertag` returned 503 to repeated lookups all
+afternoon, and returned 200 immediately after he actually connected. Looking a
+name up does not put it in GeyserMC's cache; **a connection attempt does** — and
+it does not have to be a successful one, since Geyser sees the player before the
+allowlist rejects them. So:
+
+1. Ask the player to try to join **once**. They will be told *"You are not
+   whitelisted on this server"*. That is expected — it is the point.
+2. Run the sync again. The normal `fwhitelist add <gamertag>` now works.
+
+This is the first thing to try. It costs one message to a parent, needs no
+third-party service, and the identity comes from the player's own connection.
+
+*Evidence note: this is one player's before-and-after, not a controlled test.
+It is recorded because the "before" was repeated and stable and the connection
+was the only intervening event.*
+
+### The automatic fallback, and its limits
+
+If the first add still fails, the sync now resolves the gamertag itself through
+**playerdb.co**, which queries Xbox Live directly rather than serving a cache,
+and adds the player by Floodgate UUID. This is automatic — the paragraphs below
+describe what it is doing, and are also the manual procedure if you need it.
+
+⚠️ **playerdb rate-limits hard, and not per-caller.** Measured 2026-08-11: the
+third request in quick succession returned `429 "Xbox Live API rate limit
+exceeded"`, and it stayed 429 for **over twenty minutes** before recovering on
+its own. The sync reports a 429 as *"wait a few minutes and run the sync
+again"*, explicitly not as a bad gamertag, and it makes at most one control
+request plus one per player being added. **Treat this route as best-effort**;
+the connect-once route above is the reliable one.
+
+Java players are unaffected by all of this — `whitelist add` uses Mojang's
+lookup instead.
+
+### Doing it by hand: add them by Floodgate UUID
+
+This is what the fallback automates, and the route that **worked on 2026-08-11**
+— MarNar was playing within minutes of it. It skips the gamertag lookup entirely.
 
 **Do not bother with Geyser's `debug-mode`.** It looks like the obvious way to
 capture the XUID from the player's own handshake and it is not: with
@@ -291,7 +327,15 @@ curl -s https://api.geysermc.org/v2/xbox/xuid/Notch        # -> 2535453759792258
 
 Those matched on 2026-08-11, which is what made playerdb's answer for
 `examplegamertag` usable. Two sources agreeing on a third-party value is the
-evidence; "it returned a plausible-looking number" is not.
+evidence; "it returned a plausible-looking number" is not. The sync runs this
+same control once per invocation and refuses the fallback entirely if it
+disagrees — the point is to catch the service answering with a placeholder or
+somebody else's id, which a "looks like a number" check would pass.
+
+⚠️ **A round trip through GeyserMC is not available as a second opinion.** Its
+reverse endpoint `/v2/xbox/gamertag/<xuid>` is backed by the same cache: it
+returns 200 for `2535453759792258` (`Notch`) and 503 for an uncached id. So it
+can only confirm players you did not need to look up. Measured 2026-08-11.
 
 Turn the XUID into a Floodgate UUID — it is just the XUID as the low bits of an
 otherwise-zero UUID:
@@ -331,17 +375,34 @@ That matters because the roster is matched by **name**. Before 2026-08-11 an
 `unknown` entry read as "not on the roster", so the next sync would have removed
 a perfectly legitimate player and kicked them mid-game. Both
 `marnar-mc-sync-players` and `marnar-mc-adminctl` now translate an `unknown`
-entry through `usercache.json`, which knows the UUID once the player has joined
-even once. Consequences worth knowing:
+entry through two sources, in order:
+
+1. **`roster/floodgate-uuids.tsv`** — the sync writes `<uuid>\t<gamertag>` there
+   at the moment it adds somebody by UUID, so the name is known immediately.
+2. **`usercache.json`** — the server's own record, which learns the name at
+   first join. Kept as a second source because it covers entries made before
+   the map existed. ⚠️ Its entries carry an `expiresOn` **one month out**, so it
+   is not a durable answer for a player who stops logging in; the map is.
+
+Consequences worth knowing:
 
 - The panel shows them correctly as synced, though `whitelist list` on the
   console still prints `unknown`. That is cosmetic.
-- A player added by UUID who has **never joined** cannot be translated. The sync
-  prints `? unknown (added by UUID, never joined — left alone)` and **does not
-  remove them** — the safe direction. If you see that line for somebody who
-  should not be there, remove them by UUID by hand.
+- **Removing such a player must be done by UUID.** Measured 2026-08-11:
+  `whitelist remove <uuid>` answers **"That player does not exist"** and leaves
+  the entry in place, while `fwhitelist remove <uuid>` removes it. Removing by
+  the gamertag does nothing either, because that is not the stored name. The
+  sync consults the map and uses `fwhitelist remove` automatically; by hand,
+  use `fwhitelist remove`. A removal that silently does nothing leaves an
+  ex-player able to join.
+- A player added by UUID who is in **neither** source cannot be translated. The
+  sync prints `? unknown (added by UUID, never joined, and not in the map —
+  left alone)` and **does not remove them** — the safe direction. If you see
+  that line for somebody who should not be there, remove them by UUID by hand.
 - The two scripts share this logic on purpose. **If you change one, change the
   other**, or the panel and the sync will disagree about who is allowed in.
+- `floodgate-uuids.tsv` is player data: it lives beside the roster, is **not in
+  Git** (F-10a) and rides along in the nightly backup.
 
 ⛔ Do not "fix" this by turning the allowlist off. It stays on and enforced
 (A-1/A-1a); an open server is not an acceptable workaround for a slow one.
