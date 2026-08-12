@@ -12,8 +12,14 @@ allowlist only.
 2026-08-11 — the first real session. Friends have not been invited yet.
 
 The server is live and reachable from the internet on all three paths (Java,
-Bedrock direct, and the console path). Backups, the nightly restart and the
-allowlist tooling are in place. World pre-generation is in progress.
+Bedrock direct, and the console path). The nightly restart and the allowlist
+tooling are in place. World pre-generation is **finished** — all three
+dimensions reached 100% (overworld 39m46s, Nether 29s, End 5m39s).
+
+> ⚠️ **There is no backup of the world.** `/home/mcadmin/backups/minecraft/` is
+> empty: the scheduled timer is off by decision, and the archives were deleted
+> on 2026-08-11 before anyone had played. MarNar has played since. Press **Hacer
+> una copia** in the panel to create the first restore point.
 
 > ## ⚠️ The PS5 needs PlayStation Plus — the player's, not ours
 >
