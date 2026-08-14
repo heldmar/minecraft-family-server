@@ -74,6 +74,9 @@ location /api/ {
     proxy_pass ${API_UPSTREAM}/;
     proxy_http_version 1.1;
     proxy_set_header Host \$host;
+    # \$remote_addr is the real client, not NPM: nginx.conf's set_real_ip_from
+    # rewrites it before this runs. Do not "simplify" that away — the agent puts
+    # this value straight into the audit log as who took the action.
     proxy_set_header X-Real-IP \$remote_addr;
     proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto \$scheme;

@@ -182,6 +182,28 @@ way to do anything.
 > other sites. The fixed verb list in `marnar-mc-adminctl` is the entire
 > security model (S-9) — if the agent can run docker directly, there isn't one.
 
+**The audit log shows `172.18.0.x` instead of a person** → the agent records
+whatever arrives in `X-Real-IP` as who took the action, and a container address
+means the real client was lost somewhere upstream. Two hops can lose it, and
+they were both broken until 2026-08-14:
+
+1. **NPM** read `X-Real-IP`, which Cloudflare does not send — it sends
+   `CF-Connecting-IP`. Fixed at the reverse proxy; affects all 8 proxy hosts.
+2. **Our own container** overwrote the value with `$remote_addr`, which inside
+   `mc-admin` is NPM's address. Fixed by `set_real_ip_from 172.18.0.0/16` +
+   `real_ip_header X-Real-IP` in the `server` block of `admin/ui/nginx.conf`.
+
+> ⚠️ **That trust line is only safe while `mc-admin` publishes no ports and sits
+> on `npm-network` alone** — nothing outside Docker can then open a connection to
+> it and forge the header. Re-check it if a `ports:` mapping or a second network
+> is ever added, **or if a new container joins `npm-network`**: anything on that
+> bridge can reach `mc-admin:80` directly and claim to be any client it likes.
+
+Verify with the recorded address, never with a 200 — the panel looks identical
+either way. Load the panel in a browser, then
+`ssh mcserver 'sudo journalctl -u marnar-mc-admin -n 5 --no-pager'` and compare
+against `ifconfig.me`.
+
 **A world operation is stuck.** They are jobs; only one runs at a time. Watch it
 directly:
 
