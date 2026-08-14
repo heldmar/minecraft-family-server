@@ -202,7 +202,14 @@ they were both broken until 2026-08-14:
 Verify with the recorded address, never with a 200 — the panel looks identical
 either way. Load the panel in a browser, then
 `ssh mcserver 'sudo journalctl -u marnar-mc-admin -n 5 --no-pager'` and compare
-against `ifconfig.me`.
+against `ifconfig.me`. Confirmed working end to end 2026-08-14.
+
+Expect an **IPv6** address from a home connection. Those are usually
+privacy-extension addresses that rotate about daily, so a log line identifies a
+household, not a device, and two entries a week apart cannot be assumed to be
+the same person. If a per-IP limit is ever added here it must key on the **/64**,
+not the full address — `$binary_remote_addr` alone is an IPv4-shaped answer that
+a v6 client sidesteps by rotating.
 
 **A world operation is stuck.** They are jobs; only one runs at a time. Watch it
 directly:
