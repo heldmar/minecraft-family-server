@@ -1,0 +1,203 @@
+#!/bin/bash
+# marnar-mc-offsite — weekly off-site copy of the Minecraft world to Amazon S3 (O-4a).
+#
+# Deployed to the cloud box as /usr/local/sbin/marnar-mc-offsite, run weekly by
+# marnar-mc-offsite.timer. This file in the repo is the source of truth.
+#
+# This closes the off-site backup gap noted in
+# docs/RUNBOOK.md: until now every copy of the world lived on
+# the same boot volume as the world itself, so one lost volume lost both.
+#
+# ── It only uploads when somebody has actually played ────────────────────────
+#
+# The obvious "has it changed?" test — the mtime of the world tree — does not work.
+# A Paper server rewrites level_overrides.dat, chunk_tickets.dat, raids.dat and
+# friends on every autosave whether or not a single player is online, so the world
+# tree looks freshly modified at all times and the check would never skip anything.
+#
+# What does track real play is world/players/ — the .dat, stats/ and advancements/
+# files are written when a player logs out. Verified 2026-08-18: those timestamps
+# line up exactly with the join/leave events in the container log, and a player who
+# was whitelisted but never joined has no file there at all.
+#
+# So: newest mtime under world/players/ vs. the one recorded at the last successful
+# upload. Equal means nobody has played since, and there is nothing new to protect —
+# we skip the archive too, not just the upload, which also spares a 1-vCPU box the
+# compression. A quiet school week costs nothing at all.
+#
+# ── Why it never deletes ─────────────────────────────────────────────────────
+#
+# `rclone copyto`, never `rclone sync` or `delete`, in the spirit of
+# another backup job on the same box. The box's IAM key is granted PutObject/GetObject/ListBucket
+# and NOT DeleteObject, so a box that gets compromised cannot erase the backups that
+# would rescue it. Retention lives in S3, not here. Keep it that way.
+#
+# Retention is by OBJECT VERSION, not by object age, and that distinction is the
+# whole reason this works. The obvious rule — "expire objects older than 14 days" —
+# is wrong in combination with the skip-if-nobody-played logic above: three quiet
+# weeks and the age rule deletes the last copy while the skip logic quite correctly
+# declines to upload a new one, leaving nothing off-site exactly when nothing has
+# changed. So the bucket is versioned, every upload overwrites ONE key, and the
+# lifecycle rule only trims non-current versions. The current version never expires,
+# however long the server sits quiet. See docs/RUNBOOK.md §6b for the rule and the
+# IAM policy.
+#
+# ── Cost ─────────────────────────────────────────────────────────────────────
+#
+# The archive is ~300 MB. In S3 Standard that is about $0.007/month per copy, and the
+# lifecycle rule keeps two (current + one previous), so roughly $0.014/month — call
+# it 17 cents a year. Uploads into S3 are free, and egress off the box is inside
+# its 10 TB/month allowance. See docs/RUNBOOK.md §6b for why S3 Standard is genuinely
+# the cheapest class at this size and the Glacier tiers would cost MORE.
+#
+# Config: /etc/marnar/mc-offsite.env    (rclone S3 creds + S3_BASE)  mode 600, root
+#         /etc/marnar/reboot-check.env  (NTFY_SERVER, NTFY_TOPIC)    shared
+#
+# Exit codes: 0 = uploaded and verified, or correctly skipped. 1 = anything else.
+
+set -uo pipefail
+
+CONFIG=/etc/marnar/mc-offsite.env
+NTFY_CONFIG=/etc/marnar/reboot-check.env
+STATE=/var/lib/marnar/mc-offsite.state
+WORLD=/home/mcadmin/stacks/minecraft/data/world
+BACKUP_CMD=/usr/local/sbin/marnar-mc-backup
+LOCAL_DAILY=/home/mcadmin/backups/minecraft/daily
+HOST=$(hostname -s)
+
+DRY=false
+FORCE=false
+for a in "$@"; do
+  case "$a" in
+    --dry-run) DRY=true ;;
+    --force)   FORCE=true ;;   # upload even if nobody has played (after a restore)
+    *) echo "usage: $0 [--dry-run] [--force]" >&2; exit 1 ;;
+  esac
+done
+
+log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*"; }
+
+# shellcheck source=/dev/null
+[ -r "$NTFY_CONFIG" ] || { echo "missing $NTFY_CONFIG" >&2; exit 1; }
+. "$NTFY_CONFIG"
+# shellcheck source=/dev/null
+[ -r "$CONFIG" ] || { echo "missing $CONFIG" >&2; exit 1; }
+. "$CONFIG"
+
+: "${NTFY_SERVER:?NTFY_SERVER not set}"
+: "${NTFY_TOPIC:?NTFY_TOPIC not set}"
+: "${S3_BASE:?S3_BASE not set in $CONFIG}"
+: "${RCLONE_CONFIG_MCB_ACCESS_KEY_ID:?rclone S3 credentials not set in $CONFIG}"
+# rclone probes the destination with CreateBucket before writing, which a properly
+# scoped IAM policy refuses. Default it on here rather than trusting the config file:
+# a missing value fails as a 403 at 04:00 on a Sunday, not now.
+: "${RCLONE_CONFIG_MCB_NO_CHECK_BUCKET:=true}"
+
+export RCLONE_CONFIG_MCB_TYPE RCLONE_CONFIG_MCB_PROVIDER RCLONE_CONFIG_MCB_REGION \
+       RCLONE_CONFIG_MCB_ACCESS_KEY_ID RCLONE_CONFIG_MCB_SECRET_ACCESS_KEY \
+       RCLONE_CONFIG_MCB_SERVER_SIDE_ENCRYPTION RCLONE_CONFIG_MCB_NO_CHECK_BUCKET
+
+notify() {  # notify <title> <priority> <tags> <body>
+    local args=(-s -o /dev/null -w '%{http_code}' --max-time 20 --retry 2 --retry-delay 5
+                -H "Title: $1" -H "Priority: $2" -H "Tags: $3" -H "Markdown: yes"
+                -d "$4" "${NTFY_SERVER%/}/${NTFY_TOPIC}")
+    [ -n "${NTFY_TOKEN:-}" ] && args=(-H "Authorization: Bearer $NTFY_TOKEN" "${args[@]}")
+    local code; code=$(curl "${args[@]}")
+    [ "$code" = "200" ] && echo "ntfy: sent" || { echo "ntfy: FAILED (HTTP $code)" >&2; return 1; }
+}
+
+die() {
+    log "ERROR: $1"
+    notify "Minecraft off-site backup FAILED" "high" "warning,floppy_disk" \
+"The weekly off-site copy of the Minecraft world did not complete on \`$HOST\`.
+
+**$1**
+
+The world itself is fine and the local backups in \`$LOCAL_DAILY\` are untouched —
+what is missing is this week's copy in S3. Nothing in S3 was deleted."
+    exit 1
+}
+
+command -v rclone >/dev/null || die "rclone is not installed"
+
+# --- has anyone played since the last upload? --------------------------------
+# Newest mtime under world/players/, as a Unix timestamp. See the header for why
+# this and not the world tree.
+[ -d "$WORLD/players" ] || die "$WORLD/players does not exist — is this still a Paper world?"
+PLAYED=$(find "$WORLD/players" -type f -printf '%T@\n' 2>/dev/null \
+         | sort -rn | head -1 | cut -d. -f1)
+[ -n "$PLAYED" ] || PLAYED=0
+
+LAST=0
+[ -r "$STATE" ] && LAST=$(cat "$STATE" 2>/dev/null || echo 0)
+[[ "$LAST" =~ ^[0-9]+$ ]] || LAST=0
+
+if [ "$PLAYED" = "0" ]; then
+    log "nobody has ever played — nothing to copy off-site yet"
+    exit 0
+fi
+
+if [ "$PLAYED" -le "$LAST" ] && ! $FORCE; then
+    log "no play since the last off-site copy ($(date -d "@$LAST" '+%Y-%m-%d %H:%M')) — skipping"
+    log "no archive built, no upload, no cost"
+    exit 0
+fi
+
+log "world has been played since the last copy (newest player file: $(date -d "@$PLAYED" '+%Y-%m-%d %H:%M'))"
+
+if $DRY; then
+    log "dry run — would back up and upload to $S3_BASE"
+    rclone lsjson "$S3_BASE" --max-depth 1 >/dev/null 2>&1 \
+        && log "dry run — $S3_BASE is reachable" \
+        || log "dry run — WARNING: cannot reach $S3_BASE"
+    exit 0
+fi
+
+# --- make a fresh, consistent archive ----------------------------------------
+# Deliberately reuses marnar-mc-backup rather than reimplementing it. That script
+# owns the save-off / save-all flush / save-on dance and the EXIT trap that
+# guarantees saving comes back on. Duplicating that here would mean two copies of
+# the one piece of logic that silently destroys the world when it is wrong.
+[ -x "$BACKUP_CMD" ] || die "$BACKUP_CMD is missing or not executable"
+log "building a fresh archive via marnar-mc-backup"
+"$BACKUP_CMD" || die "marnar-mc-backup failed; nothing was uploaded"
+
+ARCHIVE=$(ls -t "$LOCAL_DAILY"/world-*.tar.zst 2>/dev/null | head -1)
+[ -n "$ARCHIVE" ] && [ -r "$ARCHIVE" ] || die "no archive found in $LOCAL_DAILY after backup"
+
+# The archive must be the one we just made, not a stale one left by a failed run.
+AGE=$(( $(date +%s) - $(stat -c %Y "$ARCHIVE") ))
+[ "$AGE" -lt 3600 ] || die "newest archive $ARCHIVE is ${AGE}s old — marnar-mc-backup did not produce a new one"
+
+SIZE=$(stat -c %s "$ARCHIVE")
+
+# One fixed key, overwritten every time. Not a dated name: see the header — dated
+# names force age-based retention, and age-based retention throws away the last
+# copy during a quiet spell. The date of each copy is not lost, it is carried by
+# the S3 version's own timestamp, which is what the lifecycle rule reads too.
+REMOTE_KEY=world.tar.zst
+log "uploading $(basename "$ARCHIVE") ($(numfmt --to=iec "$SIZE")) to $S3_BASE/$REMOTE_KEY"
+
+# nice/ionice: this shares one vCPU with the game. A weekly upload must never be
+# the reason somebody's build lags.
+nice -n 19 ionice -c3 rclone copyto "$ARCHIVE" "$S3_BASE/$REMOTE_KEY" \
+    --s3-chunk-size 16M --transfers 1 --retries 3 --low-level-retries 10 \
+    --stats-one-line --stats 30s \
+    || die "rclone copyto failed — this week's world is NOT off-site"
+
+# --- verify it actually landed, at the right size ----------------------------
+# An upload that reports success and leaves a truncated object is the failure that
+# matters, because it is only discovered on the day it is needed. Checking the size
+# in S3 is cheap and catches it now instead.
+REMOTE_SIZE=$(rclone lsjson "$S3_BASE/$REMOTE_KEY" 2>/dev/null \
+              | grep -o '"Size":[0-9]*' | head -1 | cut -d: -f2)
+[ -n "$REMOTE_SIZE" ] || die "uploaded object is not listable in S3 — treat this week as unprotected"
+[ "$REMOTE_SIZE" = "$SIZE" ] \
+    || die "size mismatch in S3: local $SIZE, remote $REMOTE_SIZE — the copy is truncated"
+
+log "verified in S3: $REMOTE_KEY $REMOTE_SIZE bytes"
+
+mkdir -p "$(dirname "$STATE")"
+echo "$PLAYED" > "$STATE"
+
+log "done — off-site copy complete"

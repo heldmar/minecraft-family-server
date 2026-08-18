@@ -155,6 +155,34 @@ whitelist_uuids() {
     | sed 's/.*"\([^"]*\)"$/\1/'
 }
 
+# The UUID the server has stored for a whitelist entry, given the name that
+# read_whitelist reported for it. Removal needs this because `whitelist remove
+# <name>` does not work on a Bedrock player: Paper answers "That player does not
+# exist" and leaves the entry in place, so the sync reported a clean removal while
+# an ex-player kept their access. Measured on the live server 2026-08-18 —
+# .examplefriend survived four consecutive syncs that each claimed to remove him.
+#
+# whitelist.json is checked first because it is the thing we are about to edit and
+# always holds the authoritative UUID. The UUID map and usercache cover the entry
+# that reads "unknown", where read_whitelist handed back a translated gamertag that
+# appears nowhere in whitelist.json itself.
+whitelist_uuid_for_name() {  # $1 = name as read_whitelist reported it
+  local bare=${1#.} wl uuid
+  wl=$(docker exec minecraft cat /data/whitelist.json 2>/dev/null | tr -d '\n' | sed 's/}/}\n/g')
+  uuid=$(printf '%s\n' "$wl" \
+    | grep -E "\"name\"[[:space:]]*:[[:space:]]*\"\.?${bare}\"" \
+    | grep -o '"uuid"[[:space:]]*:[[:space:]]*"[^"]*"' \
+    | sed 's/.*"\([^"]*\)"$/\1/' | head -1)
+  [ -z "$uuid" ] && uuid=$(awk -F'\t' -v n="$bare" '$2==n{print $1; exit}' "$UUIDMAP" 2>/dev/null)
+  printf '%s' "$uuid"
+}
+
+# Floodgate mints its UUIDs in a reserved range beginning 00000000-0000-0000-000.
+# A real Mojang account never looks like this, which is what lets one function
+# serve both editions: Bedrock players must be removed with `fwhitelist remove
+# <uuid>`, Java players with `whitelist remove <name>`.
+is_floodgate_uuid() { case "$1" in 00000000-0000-0000-000*) return 0 ;; *) return 1 ;; esac; }
+
 # --- fallback: resolve a gamertag ourselves ---------------------------------
 # Used only when `fwhitelist add <gamertag>` has already been tried and failed,
 # i.e. when GeyserMC could not resolve the name. playerdb.co queries Xbox Live
@@ -298,11 +326,19 @@ while read -r name; do
   # answers "That player does not exist" and leaves the entry in place, while
   # `fwhitelist remove <uuid>` removes it. Both measured 2026-08-11. Silently
   # removing nothing here would leave an ex-player able to join.
-  rm_uuid=$(awk -F'\t' -v n="$bare" '$2==n{print $1; exit}' "$UUIDMAP" 2>/dev/null)
-  if [ -n "$rm_uuid" ]; then
+  #
+  # ⚠️ Do not "simplify" this back to `whitelist remove $name`. That was the old
+  # code and it silently did nothing for every Bedrock player whose UUID was not
+  # in $UUIDMAP — which was all of them but one, since the map is only written
+  # when the by-UUID escape hatch is used. The removal has to go by UUID.
+  rm_uuid=$(whitelist_uuid_for_name "$name")
+  if [ -n "$rm_uuid" ] && is_floodgate_uuid "$rm_uuid"; then
     mc "fwhitelist remove $rm_uuid"
+  elif [ -n "$rm_uuid" ]; then
+    mc "whitelist remove $name"        # Java account: name works, and reads better in the log
   else
-    mc "whitelist remove $name"
+    echo "  ! could not find a UUID for $name — NOT removed; remove it by hand (RUNBOOK §3d)"
+    continue
   fi
   # Removing from the whitelist does not disconnect someone already playing.
   mc "kick $name Ya no estas en la lista del servidor"

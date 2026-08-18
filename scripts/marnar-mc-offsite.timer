@@ -1,0 +1,25 @@
+# Weekly off-site copy of the world to Amazon S3 (O-4a).
+#
+# ⚠️ Note what this does NOT change: marnar-mc-backup.timer stays DISABLED. Local
+# backups remain on-demand by decision (C-1). This timer is the one scheduled
+# backup on the box, and it exists because an off-site copy nobody remembers to
+# press is not an off-site copy.
+#
+# It is cheap to run weekly because the script skips itself entirely when nobody
+# has played since the last upload — no archive, no transfer, no charge.
+
+[Unit]
+Description=Weekly off-site Minecraft world copy to S3 (O-4a)
+
+[Timer]
+# Sunday 04:00 local, an hour before the 05:00 nightly restart and offset from
+# another weekly backup job (Sundays ~03:30) so two 300 MB-ish uploads do not
+# contend for the same single vCPU.
+OnCalendar=Sun *-*-* 04:00:00
+# The box is not always up; a missed Sunday runs at the next boot rather than
+# waiting a week.
+Persistent=true
+RandomizedDelaySec=900
+
+[Install]
+WantedBy=timers.target

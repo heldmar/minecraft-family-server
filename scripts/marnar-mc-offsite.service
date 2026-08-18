@@ -1,0 +1,13 @@
+[Unit]
+Description=Weekly off-site copy of the Minecraft world to S3 (O-4a)
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/marnar-mc-offsite
+# Shares one vCPU with the game server. The upload must never be the reason a
+# player lags; the script also nice/ionices the transfer itself.
+Nice=19
+IOSchedulingClass=idle

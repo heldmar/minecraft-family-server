@@ -9,6 +9,11 @@ rcon.password
 cloudflare-token*
 cf-ddns.env
 
+# AWS keys for the S3 offsite copy — the CSV AWS hands you on key creation
+*accessKeys.csv
+*credentials.csv
+.aws/
+
 # World data and server runtime — lives on the server, not in Git
 world/
 world_nether/
