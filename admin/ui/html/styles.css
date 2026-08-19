@@ -449,3 +449,7 @@ code.connect-v { background: #E6EFDD; padding: 3px 8px; border-radius: 6px; }
   .setting { flex-wrap: wrap; }
   .setting select { width: 100%; }
 }
+
+/* The typed confirmation on world regeneration. */
+.confirm-phrase { display: block; margin: 10px 0 2px; font-size: 13px; }
+.confirm-phrase input { margin-top: 5px; text-transform: uppercase; }

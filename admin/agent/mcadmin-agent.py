@@ -51,6 +51,12 @@ if len(TOKEN) < 24:
 
 MAX_UPLOAD = 2 * 1024 * 1024 * 1024  # 2 GB — a big world, with room to spare
 
+# The largest world border the panel may ask for (Helder, 2026-08-19). Not a
+# safety limit — a courtesy one. Pre-generation at 3000 takes ~45 minutes and
+# scales with area, so the full 20000 adminctl allows would be well over a day
+# of pegged CPU on a box that also serves two other sites.
+PANEL_MAX_BORDER = 4500
+
 
 # ---------------------------------------------------------------------------
 # jobs
@@ -300,7 +306,16 @@ class Handler(BaseHTTPRequestHandler):
             elif op == "regenerate":
                 seed = str(data.get("seed", "")).strip()
                 size = str(data.get("size", "3000")).strip()
-                argv = ["world-regenerate", seed, size]
+                level_type = str(data.get("level_type", "normal")).strip()
+                structures = str(data.get("structures", "true")).strip()
+                # The panel's ceiling, enforced here rather than only in the
+                # browser. adminctl still accepts up to 20000 so the shell keeps
+                # the full range for an operator who means it; what the web UI
+                # may ask for is capped, because pre-generation cost scales with
+                # area and the CPU is shared with two other live sites.
+                if not size.isdigit() or not 500 <= int(size) <= PANEL_MAX_BORDER:
+                    return self.reply(400, {"error": "size must be between 500 and %d" % PANEL_MAX_BORDER})
+                argv = ["world-regenerate", seed, size, level_type, structures]
             elif op == "import":
                 argv = ["world-import", str(data.get("archive", ""))]
             elif op == "restore":

@@ -67,6 +67,13 @@ stays a separate, destructive operation. See F-12 and
 26.2 introduced, since gamerules are now **per-dimension** and renamed to
 snake_case, and the obvious one-line write silently changes only the overworld.
 
+When a new world *is* the point, that form now asks what kind: **normal, flat or
+large biomes**, and structures on or off, alongside the seed and the border. It
+is still the one button that destroys a world, so it is gated behind typing
+`NUEVO`, and the size the panel accepts is capped well below what the shell tool
+allows — pre-generation cost grows with area, not with width. See F-12a and
+§3f.
+
 Start here: **[`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md)** for what was
 asked for and why, **[`docs/RUNBOOK.md`](docs/RUNBOOK.md)** for operating it.
 

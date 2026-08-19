@@ -82,10 +82,31 @@
   // One dialog, by choice — the expensive safety (a forced backup, and moving
   // the old world aside instead of deleting it) lives on the server where it
   // cannot be clicked past.
-  function confirmThen(title, body, onYes) {
+  // `phrase`, when given, gates the confirm button behind typing that word.
+  // Used only by world regeneration — the one action here that destroys
+  // something people care about. Comparison is case-insensitive and trimmed,
+  // because the point is deliberateness, not spelling under pressure.
+  function confirmThen(title, body, onYes, phrase) {
     $("#confirm-title").textContent = title;
     $("#confirm-body").textContent = body;
+    var wrap = $("#confirm-phrase-wrap");
+    var input = $("#confirm-phrase");
+    var yes = $("#confirm-yes");
+    input.value = "";
+    if (phrase) {
+      $("#confirm-phrase-label").textContent = t("confirm.phraseLabel", { word: phrase });
+      wrap.classList.remove("is-hidden");
+      yes.disabled = true;
+      input.oninput = function () {
+        yes.disabled = input.value.trim().toUpperCase() !== phrase.trim().toUpperCase();
+      };
+    } else {
+      wrap.classList.add("is-hidden");
+      input.oninput = null;
+      yes.disabled = false;
+    }
     $("#confirm-overlay").classList.remove("is-hidden");
+    if (phrase) input.focus();
     $("#confirm-yes").onclick = function () {
       $("#confirm-overlay").classList.add("is-hidden");
       onYes();
@@ -491,12 +512,17 @@
     ev.preventDefault();
     var seed = ev.target.seed.value.trim();
     var size = ev.target.size.value;
+    var levelType = ev.target.level_type.value;
+    var structures = ev.target.structures.value;
     confirmThen(t("world.regenConfirmTitle"), t("world.regenConfirmBody", {
       seed: seed ? t("world.regenSeedNamed", { seed: seed }) : t("world.regenSeedRandom"),
-      size: size
+      size: size,
+      type: t("world.type" + ({ normal: "Normal", flat: "Flat", large_biomes: "Large" }[levelType]))
     }), function () {
-      startJob("regenerate", { seed: seed, size: size }, "job.regenTitle");
-    });
+      startJob("regenerate",
+        { seed: seed, size: size, level_type: levelType, structures: structures },
+        "job.regenTitle");
+    }, t("world.regenPhrase"));
   };
 
   // Upload goes through XHR rather than fetch purely for the progress event —

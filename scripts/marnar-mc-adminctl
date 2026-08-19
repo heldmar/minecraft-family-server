@@ -370,22 +370,40 @@ pregenerate() {
 }
 
 verb_world_regenerate() {
-  local seed=${1:-} size=${2:-3000}
+  local seed=${1:-} size=${2:-3000} level_type=${3:-normal} structures=${4:-true}
   case "$size" in ''|*[!0-9]*) die "size must be a number" ;; esac
+  # The shell keeps the full range. The panel offers only up to 4500 (Helder,
+  # 2026-08-19) because pre-generation cost scales with AREA, not width: 3000
+  # takes ~45 minutes, so 20000 is ~44x that — well over a day of pegged CPU
+  # beside two other live sites. Disk is not the constraint; 158 GB were
+  # free when this was measured and even 20000 lands around 25 GB.
   [ "$size" -ge 500 ] && [ "$size" -le 20000 ] || die "size must be between 500 and 20000"
   case "$seed" in ''|-*[!0-9]*|*[!0-9-]*) [ -z "$seed" ] || die "seed must be a number" ;; esac
 
-  audit "world.regenerate seed=${seed:-random} size=$size"
+  # World presets that exist in 26.2 and that we are willing to generate.
+  # "amplified" is real and deliberately absent — see docker-compose.yml.
+  case "$level_type" in
+    normal|flat|large_biomes) ;;
+    *) die "world type must be normal, flat or large_biomes" ;;
+  esac
+  case "$structures" in
+    true|false) ;;
+    *) die "structures must be true or false" ;;
+  esac
+
+  audit "world.regenerate seed=${seed:-random} size=$size type=$level_type structures=$structures"
   preserve_current_world "regenerate the world"
 
   # itzg only writes level-seed into server.properties from $SEED, so the seed
   # has to go through the compose environment, not into the file directly —
   # anything written to server.properties by hand is overwritten at next start.
-  echo "==> setting seed to ${seed:-random}"
+  echo "==> setting seed to ${seed:-random}, type $level_type, structures $structures"
   local env=$STACK/.env
   touch "$env"
-  sed -i '/^MC_SEED=/d' "$env"
+  sed -i '/^MC_SEED=/d;/^MC_LEVEL_TYPE=/d;/^MC_STRUCTURES=/d' "$env"
   echo "MC_SEED=$seed" >> "$env"
+  echo "MC_LEVEL_TYPE=minecraft:$level_type" >> "$env"
+  echo "MC_STRUCTURES=$structures" >> "$env"
 
   wait_for_ready
   pregenerate "$size"
@@ -393,7 +411,7 @@ verb_world_regenerate() {
   # play setting the panel was told to use. Put them back before anyone joins.
   echo "==> re-applying play settings"
   verb_settings_apply || echo "WARNING: could not re-apply play settings"
-  echo "==> done. New world generated with seed ${seed:-random}, border $size."
+  echo "==> done. New world generated with seed ${seed:-random}, border $size, type $level_type, structures $structures."
   audit "world.regenerate complete"
 }
 

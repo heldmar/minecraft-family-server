@@ -581,6 +581,50 @@ browser and it.
 
 ---
 
+## 3f. Making a new world (F-12a)
+
+⚠️ **This destroys the world MarNar is playing on.** The old world is moved aside,
+not deleted, but nothing puts it back automatically. The panel asks whoever
+clicks it to type **NUEVO** (or **NEW** in English) first, for that reason.
+
+The form asks for four things:
+
+| Field | Where it ends up | Applied when |
+|---|---|---|
+| Seed | `MC_SEED` in `stacks/minecraft/.env` | at the recreate |
+| Size (border) | `worldborder set` over RCON, after the world exists | after generation |
+| World type | `MC_LEVEL_TYPE` in `.env` → `LEVEL_TYPE` → `level-type` | at the recreate |
+| Structures | `MC_STRUCTURES` in `.env` → `GENERATE_STRUCTURES` | at the recreate |
+
+`normal`, `flat` and `large_biomes` are the only accepted types; adminctl
+refuses anything else **before** it moves the old world aside, so a bad request
+costs nothing. The value written to `.env` is prefixed — `minecraft:normal` —
+because 26.2 wants the namespaced id.
+
+### Two different size limits, on purpose
+
+`marnar-mc-adminctl world-regenerate` accepts **500–20000**. The agent, which is
+what the browser talks to, refuses anything over **4500** (`PANEL_MAX_BORDER` in
+`mcadmin-agent.py`). That is not redundancy, it is the split between "an adult at
+a shell knows what they are asking for" and "a kid clicked a number". Chunky's
+cost scales with **area**: 4500 → 20000 is not 4× the wait, it is roughly 20×,
+on one shared vCPU that is also serving two other sites. Raise the panel cap
+by changing that one constant, not by touching adminctl.
+
+### Things that are not on the form, and why
+
+- **Amplified** — a real 26.2 preset, left out. It is the heaviest terrain to
+  generate and the pre-generation cost here was never measured.
+- **Hardcore** — left out because it contradicts keep-items-on-death (F-1b).
+- **Bonus chest** — *cannot* be offered. `/image/property-definitions.json` in
+  the itzg image has no property for it, so there is no environment variable to
+  set. Do not go looking for the right variable name; there isn't one.
+
+After generation, `verb_settings_apply` runs, so a new world comes up with the
+same nine play settings the old one had rather than vanilla defaults.
+
+---
+
 ## 4. Minecraft updated and Bedrock players can't join (O-2)
 
 **This is expected and recurring, not an incident.** When Mojang ships a Bedrock

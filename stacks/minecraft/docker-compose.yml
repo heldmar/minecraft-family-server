@@ -95,6 +95,20 @@ services:
       # only takes effect for a world being created, never for an existing one.
       SEED: "${MC_SEED:-}"
 
+      # Same story as SEED, and the same .env route: both are read only when a
+      # world is first created, so changing either one on a live world does
+      # nothing at all. The panel writes them immediately before it regenerates.
+      #
+      # LEVEL_TYPE takes a namespaced world preset. The full list lives in the
+      # server jar under data/minecraft/worldgen/world_preset/; 26.2 also ships
+      # amplified, single_biome_surface, flat_all_dimensions and
+      # debug_all_block_states. The panel offers three — normal, flat and
+      # large_biomes. Amplified is deliberately left out: it is the most
+      # tempting option on the list and the most expensive to generate on one
+      # shared vCPU, and that cost was never measured here.
+      LEVEL_TYPE: "${MC_LEVEL_TYPE:-minecraft:normal}"
+      GENERATE_STRUCTURES: "${MC_STRUCTURES:-true}"
+
       # P-4: the main CPU lever after pre-generation.
       VIEW_DISTANCE: "6"
       SIMULATION_DISTANCE: "4"

@@ -247,8 +247,25 @@
               <input name="seed" inputmode="numeric" autocomplete="off" data-i18n-ph="world.regenSeedPh">
             </label>
             <label><span data-i18n="world.regenSize"></span>
-              <input name="size" type="number" min="500" max="20000" step="100" value="3000">
+              <!-- 4500, not adminctl's 20000: pre-generation scales with area,
+                   and the shell keeps the full range for an operator. -->
+              <input name="size" type="number" min="500" max="4500" step="100" value="3000">
             </label>
+            <label><span data-i18n="world.regenType"></span>
+              <select name="level_type">
+                <option value="normal" data-i18n="world.typeNormal"></option>
+                <option value="flat" data-i18n="world.typeFlat"></option>
+                <option value="large_biomes" data-i18n="world.typeLarge"></option>
+              </select>
+            </label>
+            <details class="help"><summary data-i18n="help.open"></summary><p data-i18n="help.worldType"></p></details>
+            <label><span data-i18n="world.regenStructures"></span>
+              <select name="structures">
+                <option value="true" data-i18n="world.structuresYes"></option>
+                <option value="false" data-i18n="world.structuresNo"></option>
+              </select>
+            </label>
+            <details class="help"><summary data-i18n="help.open"></summary><p data-i18n="help.structures"></p></details>
             <div class="hint hint-danger" data-i18n="world.regenHint"></div>
             <button class="btn btn-danger" type="submit" data-i18n="world.regenSubmit"></button>
           </form>
@@ -322,6 +339,13 @@
   <div class="card confirm">
     <h2 id="confirm-title"></h2>
     <p id="confirm-body"></p>
+    <!-- Typing gate. Only the world-destroying action uses it: a misclick can
+         no longer wipe three months of building, and a child exploring the
+         panel has to mean it. Everything else keeps the plain yes/no. -->
+    <label class="confirm-phrase is-hidden" id="confirm-phrase-wrap">
+      <span id="confirm-phrase-label"></span>
+      <input id="confirm-phrase" autocomplete="off" autocapitalize="characters" spellcheck="false">
+    </label>
     <div class="confirm-actions">
       <button class="btn btn-ghost" id="confirm-no" data-i18n="confirm.no"></button>
       <button class="btn btn-danger" id="confirm-yes" data-i18n="confirm.yes"></button>
