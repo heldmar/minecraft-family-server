@@ -23,11 +23,13 @@ lag when first connecting in a session, which clears on its own. On the strength
 of that the player target went **4 → 6** on 2026-08-19; two more friends can be
 added to the roster.
 
-✅ **The world is backed up, on and off the box.** Local archives in
-`/home/mcadmin/backups/minecraft/`, plus a weekly off-site copy to Amazon S3 that
-was proven by restoring it (`marnar-mc-offsite`, O-4a). It uploads only when
-somebody has actually played, so a quiet week costs nothing — about **$0.014 a
-month** all in. See [`docs/RUNBOOK.md`](docs/RUNBOOK.md) §5b.
+✅ **The world is backed up off the box.** Every copy lives in Amazon S3, and
+was proven by restoring it (`marnar-mc-offsite`, O-4a). The weekly one uploads
+only when somebody has actually played, so a quiet week costs nothing — about
+**$0.014 a month** all in. Since 2026-08-19 the archives are **deleted from the
+server's disk** once S3 confirms the size: local disk stages a copy, it does not
+store one. The panel lists what is in the bucket and restores straight from it.
+See [`docs/RUNBOOK.md`](docs/RUNBOOK.md) §5b.
 
 > ## ⚠️ The PS5 needs PlayStation Plus — the player's, not ours
 >
@@ -119,12 +121,16 @@ MarNar, who is 12. Every section carries an expandable *"¿Qué es esto?"* meant
 teach the concept, not label the button. See
 [`docs/REQUIREMENTS-ADMIN-R2.md`](docs/REQUIREMENTS-ADMIN-R2.md).
 
-> ⚠️ **Local backups do not run on a schedule.** Since 2026-08-11 a local copy is
-> made only when the button is pressed, and automatically just before anything
-> destructive. `marnar-mc-backup.timer` is disabled on purpose — do not re-enable
-> it without asking. **The one scheduled backup on the box is the weekly off-site
-> copy to S3** (O-4a, Sundays 04:07), which exists because an off-site copy nobody
-> remembers to press is not an off-site copy.
+> ⚠️ **Backups do not run on a schedule, except the off-site one.** Since
+> 2026-08-11 a copy is made only when the button is pressed, and automatically
+> just before anything destructive. `marnar-mc-backup.timer` is disabled on
+> purpose — do not re-enable it without asking. **The one scheduled backup on the
+> box is the weekly off-site copy to S3** (O-4a, Sundays 04:07), which exists
+> because an off-site copy nobody remembers to press is not an off-site copy.
+>
+> The only copy that stays on the disk is the automatic `world.replaced-*`
+> snapshot taken immediately before a regenerate, import or restore — the undo.
+> A healthy `backups/minecraft/daily/` is **empty**.
 
 > 🔒 **The S3 bucket is secret-bearing.** The archives contain `.rcon-cli.env` and
 > `plugins/floodgate/key.pem`, so `my-minecraft-backups` must stay private —
@@ -173,6 +179,7 @@ scripts/
   marnar-mc-adminctl         ← the privileged verbs the admin panel may invoke
   marnar-mc-backup           ← world backup, on demand (timer disabled, C-1)
   marnar-mc-offsite          ← weekly off-site copy to S3 (systemd timer, Sun 04:07)
+  marnar-mc-s3               ← the only thing that talks to the bucket (put/get/list/stat)
   marnar-mc-restart          ← nightly JVM bounce (systemd timer, 05:00)
   marnar-mc-restore-test     ← proves a backup boots, without touching the live world
   marnar-mc-sync-players     ← applies the on-server roster to the whitelist

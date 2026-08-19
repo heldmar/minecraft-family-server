@@ -19,6 +19,7 @@ rsync -a "$REPO/admin/agent/mcadmin-agent.py" \
          "$REPO/admin/agent/marnar-mc-admin.service" \
          "$REPO/admin/agent/sudoers-mcadmin" "$HOST:/tmp/mcadmin/"
 rsync -a "$REPO/scripts/marnar-mc-adminctl" \
+         "$REPO/scripts/marnar-mc-s3" \
          "$REPO/scripts/marnar-mc-sync-players" "$HOST:/tmp/mcadmin/"
 
 ssh "$HOST" 'sudo bash -s' <<'REMOTE'
@@ -34,6 +35,10 @@ id mcadmin &>/dev/null || useradd --system --no-create-home --shell /usr/sbin/no
 # --- privileged verb dispatcher + sync -------------------------------------
 install -o root -g root -m 0755 /tmp/mcadmin/marnar-mc-adminctl     /usr/local/sbin/
 install -o root -g root -m 0755 /tmp/mcadmin/marnar-mc-sync-players /usr/local/sbin/
+# The panel reaches S3 through this: "make a copy" uploads, "go back to this
+# copy" downloads. It reads the credentials in /etc/marnar/mc-offsite.env, so it
+# is root-only like everything else adminctl calls.
+install -o root -g root -m 0755 /tmp/mcadmin/marnar-mc-s3           /usr/local/sbin/
 
 # --- agent ------------------------------------------------------------------
 install -o root -g root -m 0755 /tmp/mcadmin/mcadmin-agent.py /usr/local/bin/

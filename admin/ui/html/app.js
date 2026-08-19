@@ -469,9 +469,10 @@
       $("#w-seed").textContent = w.seed || "–";
       $("#w-border").textContent = w.border || "–";
       $("#w-size").textContent = (w.world_mb || 0) + " MB";
-      $("#w-backups").textContent = w.backup_count || 0;
-      // D-5: "is this filling up?" answerable without SSH.
-      $("#backup-disk").textContent = t("world.diskUsed", { mb: w.backups_mb || 0 });
+      // The copy count and the space they take are set by loadBackups instead,
+      // from the list actually being shown. Since S3 became the store, the
+      // local directory holds only the automatic safety snapshots, so counting
+      // it here would have said "0 copies" over a table showing three.
     });
   }
 
@@ -480,6 +481,11 @@
       var rows = data.backups || [];
       var body = $("#backups-table tbody");
       body.textContent = "";
+      $("#w-backups").textContent = rows.length;
+      // D-5: "how much is this costing me?" answerable without SSH. Counts
+      // everything in the list, cloud and local together.
+      var totalMb = Math.round(rows.reduce(function (n, b) { return n + (b.bytes || 0); }, 0) / 1048576);
+      $("#backup-disk").textContent = t("world.diskUsed", { mb: totalMb });
       if (!rows.length) {
         var td = el("td", { cls: "empty", text: t("world.noBackups") });
         td.colSpan = 4;
@@ -487,17 +493,28 @@
         return;
       }
       rows.forEach(function (b) {
+        var offsite = b.where === "offsite";
+        // Two different things share this table, so say which is which. The
+        // cloud copies are the ones that survive the server itself; the local
+        // ones are the automatic undo taken just before something risky.
+        var wherePill = el("span", {
+          cls: "badge " + (offsite ? "badge-cloud" : "badge-here"),
+          text: offsite ? t("world.whereCloud") : t("world.whereHere")
+        });
         body.appendChild(el("tr", {}, [
-          el("td", {}, [el("span", { cls: "mono", text: b.name })]),
+          el("td", {}, [el("span", { cls: "mono", text: b.name }), wherePill]),
           el("td", { text: ago(b.mtime) }),
           el("td", { text: bytes(b.bytes) }),
           el("td", {}, [el("button", {
             cls: "btn btn-ghost btn-sm", text: t("world.restore"),
             onclick: function () {
-              confirmThen(t("world.restoreTitle"),
-                t("world.restoreBody", { when: ago(b.mtime) }),
+              // Bringing a copy down from the cloud is the only thing in this
+              // panel that costs money, so it says so before it happens.
+              var body2 = t("world.restoreBody", { when: ago(b.mtime) })
+                        + (offsite ? "\n\n" + t("world.restoreCost") : "");
+              confirmThen(t("world.restoreTitle"), body2,
                 function () {
-                  startJob("restore", { backup: b.name }, "job.restoreTitle", { name: b.name });
+                  startJob("restore", { backup: b.id }, "job.restoreTitle", { name: b.name });
                 });
             }
           })])

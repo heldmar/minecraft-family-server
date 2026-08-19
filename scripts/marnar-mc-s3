@@ -1,0 +1,192 @@
+#!/bin/bash
+# marnar-mc-s3 — the one place that talks to the backup bucket.
+#
+# Deployed as /usr/local/sbin/marnar-mc-s3. Both marnar-mc-offsite (the weekly
+# job) and marnar-mc-adminctl (the panel) go through this, so the credential
+# loading, the retry settings and — most importantly — the two traps below exist
+# once instead of three times.
+#
+# ⚠️ TRAP 1: `rclone lsjson` EXITS 0 FOR AN OBJECT THAT DOES NOT EXIST.
+# It prints an empty JSON array and returns success. Every existence check here
+# therefore tests the OUTPUT for a size, never the exit status. The first version
+# of the guard in marnar-mc-offsite used `if rclone lsjson ...` and was a silent
+# no-op that would have surfaced on the day it was needed. Measured 2026-08-19.
+# Do not "tidy" any of these into an exit-status check.
+#
+# ⚠️ TRAP 2: THE BOX CANNOT LIST OBJECT VERSIONS. The IAM key is denied
+# s3:ListBucketVersions (verified 2026-08-19 against the live key — a plain 403,
+# "no identity-based policy allows the s3:ListBucketVersions action"), and it is
+# denied s3:DeleteObject on purpose so a compromised box cannot erase the copies
+# that would rescue it. Consequences, both load-bearing:
+#
+#   * Only the CURRENT version of a key is reachable from here. Overwriting a key
+#     does not archive the old copy anywhere this box can see or fetch again.
+#     That is why panel copies get dated keys under copies/ instead of sharing
+#     one name — see the layout below.
+#   * Nothing here can delete anything. Retention is a lifecycle rule on the
+#     bucket, set in the AWS console. Keep it that way.
+#
+# ── Bucket layout ────────────────────────────────────────────────────────────
+#
+#   world.tar.zst            The weekly automatic copy. ONE fixed key, versioned,
+#                            overwritten every Sunday somebody played. Its
+#                            lifecycle rule expires only NON-current versions, so
+#                            the current one never expires however long the server
+#                            sits quiet. This is the last-resort copy and the
+#                            reason the whole scheme is not age-based. Do not
+#                            move it, rename it, or point retention at its age.
+#
+#   copies/world-<stamp>.tar.zst
+#                            One object per copy somebody deliberately made from
+#                            the panel. Dated, because the box cannot list
+#                            versions and a shared name would hide every copy but
+#                            the newest — the exact copy you took before trying
+#                            something risky. These are safe to expire by age:
+#                            world.tar.zst above is always there underneath, so a
+#                            quiet spell can never leave the world unprotected.
+#
+# ⚠️ Nothing prunes copies/ from this box. It cannot. Until the bucket has a
+# lifecycle rule on that prefix they accumulate at ~295 MB and ~$0.007/month
+# each. See docs/RUNBOOK.md 5b for the rule to add.
+#
+# Usage:
+#   marnar-mc-s3 put <local-file> <key>     upload and verify the size in S3
+#   marnar-mc-s3 get <key> <local-file>     download and verify the size locally
+#   marnar-mc-s3 list                       one line per object: key<TAB>bytes<TAB>epoch
+#   marnar-mc-s3 stat <key>                 print the size in bytes, or fail
+#
+# Exit codes: 0 = did the thing and verified it. 1 = anything else.
+set -uo pipefail
+
+CONFIG=/etc/marnar/mc-offsite.env
+
+die() { echo "marnar-mc-s3: $1" >&2; exit 1; }
+
+# shellcheck source=/dev/null
+[ -r "$CONFIG" ] || die "missing $CONFIG"
+set -a; . "$CONFIG"; set +a
+
+: "${S3_BASE:?S3_BASE not set in $CONFIG}"
+: "${RCLONE_CONFIG_MCB_ACCESS_KEY_ID:?rclone S3 credentials not set in $CONFIG}"
+# rclone probes the destination with CreateBucket before writing, which a properly
+# scoped IAM policy refuses. Default it on here rather than trusting the config
+# file: a missing value fails as a 403 in the middle of a restore, not now.
+: "${RCLONE_CONFIG_MCB_NO_CHECK_BUCKET:=true}"
+
+export RCLONE_CONFIG_MCB_TYPE RCLONE_CONFIG_MCB_PROVIDER RCLONE_CONFIG_MCB_REGION \
+       RCLONE_CONFIG_MCB_ACCESS_KEY_ID RCLONE_CONFIG_MCB_SECRET_ACCESS_KEY \
+       RCLONE_CONFIG_MCB_SERVER_SIDE_ENCRYPTION RCLONE_CONFIG_MCB_NO_CHECK_BUCKET
+
+command -v rclone >/dev/null || die "rclone is not installed"
+
+# Every rclone setting here comes from RCLONE_CONFIG_MCB_* in the environment, so
+# there is no config file and rclone says so on stderr every single run. That
+# NOTICE is harmless and it is also the first thing a child sees in the job log
+# when a restore runs, so point rclone at an empty file and let it be quiet.
+export RCLONE_CONFIG=/dev/null
+
+# nice/ionice everywhere: this box has one vCPU and it is also running the game
+# and two other sites. A backup transfer must never be why somebody lags.
+RC=(nice -n 19 ionice -c3 rclone)
+
+# Size of one object in S3, printed on stdout. Empty output means "not there" —
+# see TRAP 1. Never returns a size for a missing object, so callers can test it.
+remote_size() {
+  "${RC[@]}" lsjson "$S3_BASE/$1" 2>/dev/null \
+    | grep -o '"Size":[0-9]*' | head -1 | cut -d: -f2
+}
+
+# ⚠️ Keys are built from timestamps and fixed prefixes by the callers, never from
+# anything a browser sent. This is belt and braces on top of that: no traversal,
+# no absolute paths, no shell metacharacters, no leading dash to be read as a
+# flag by rclone.
+check_key() {
+  case "$1" in
+    ''|-*|/*|*..*) die "refusing key: $1" ;;
+  esac
+  [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] || die "refusing key: $1"
+}
+
+case "${1:-}" in
+
+  put)
+    # Explicit checks, not ${2:?...}: the bash diagnostic for an unset positional
+    # reads "line 169: 2: usage" and ends up verbatim in the panel's job log,
+    # where a twelve-year-old is the one reading it.
+    src=${2:-}; key=${3:-}
+    [ -n "$src" ] || die "put needs a file to upload"
+    [ -n "$key" ] || die "put needs a key to upload it to"
+    check_key "$key"
+    [ -r "$src" ] || die "cannot read $src"
+    size=$(stat -c %s "$src")
+    [ "$size" -gt 0 ] || die "$src is empty — refusing to upload it over anything"
+
+    "${RC[@]}" copyto "$src" "$S3_BASE/$key" \
+      --s3-chunk-size 16M --transfers 1 --retries 3 --low-level-retries 10 \
+      --stats-one-line --stats 30s \
+      || die "upload of $key failed"
+
+    # An upload that reports success and leaves a truncated object is the failure
+    # that matters, because it is only ever discovered on the day it is needed.
+    got=$(remote_size "$key")
+    [ -n "$got" ] || die "$key is not listable after upload — treat it as NOT uploaded"
+    [ "$got" = "$size" ] || die "size mismatch for $key: local $size, remote $got — the copy is truncated"
+    echo "verified in S3: $key $got bytes"
+    ;;
+
+  get)
+    key=${2:-}; dest=${3:-}
+    [ -n "$key" ] || die "get needs a key to download"
+    [ -n "$dest" ] || die "get needs somewhere to put the download"
+    check_key "$key"
+    want=$(remote_size "$key")
+    [ -n "$want" ] && [ "$want" -gt 0 ] 2>/dev/null || die "no such object in S3: $key"
+
+    mkdir -p "$(dirname "$dest")" || die "cannot create $(dirname "$dest")"
+    # Refuse rather than half-fill the disk during a restore, which would leave
+    # the world already moved aside and nothing to put back.
+    avail=$(df -P --block-size=1 "$(dirname "$dest")" | awk 'NR==2 {print $4}')
+    [ "$avail" -gt $((want + 268435456)) ] \
+      || die "not enough free disk to download $key ($want bytes, $avail free)"
+
+    "${RC[@]}" copyto "$S3_BASE/$key" "$dest" \
+      --transfers 1 --retries 3 --low-level-retries 10 \
+      --stats-one-line --stats 30s \
+      || die "download of $key failed"
+
+    [ -f "$dest" ] || die "download reported success but $dest is not there"
+    got=$(stat -c %s "$dest")
+    [ "$got" = "$want" ] \
+      || { rm -f "$dest"; die "size mismatch for $key: S3 $want, downloaded $got — deleted the partial file"; }
+    echo "downloaded and verified: $key $got bytes"
+    ;;
+
+  list)
+    # Everything the box can see: the weekly key and the dated panel copies.
+    # Not versions — see TRAP 2. Tab separated so callers do not have to parse
+    # JSON in bash.
+    # lsf --format, not lsjson: the fields come back in the order asked for, so
+    # this does not depend on rclone's JSON field order staying put.
+    #   p = path, s = size, t = modification time
+    "${RC[@]}" lsf "$S3_BASE" --recursive --files-only \
+        --format "pst" --separator "|" 2>/dev/null \
+      | while IFS='|' read -r p s m; do
+          [ -n "$p" ] || continue
+          printf '%s\t%s\t%s\n' "$p" "$s" "$(date -d "$m" +%s 2>/dev/null || echo 0)"
+        done
+    ;;
+
+  stat)
+    key=${2:-}
+    [ -n "$key" ] || die "stat needs a key"
+    check_key "$key"
+    got=$(remote_size "$key")
+    [ -n "$got" ] || die "no such object in S3: $key"
+    echo "$got"
+    ;;
+
+  *)
+    echo "usage: marnar-mc-s3 {put <file> <key>|get <key> <file>|list|stat <key>}" >&2
+    exit 1
+    ;;
+esac

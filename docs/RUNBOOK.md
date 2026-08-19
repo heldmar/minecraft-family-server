@@ -669,8 +669,9 @@ el servidor. Los que juegan en la compu por Java pueden entrar igual."*
 >    only reason those operations can be undone, and it is why turning the
 >    schedule off was safe.
 >
-> Retention is **3 dailies + 1 weekly** (was 14 + 4). On-demand copies are one
-> per press, not one per day, so a fortnight's worth was meaningless disk.
+> Since **2026-08-19 the copies do not stay on this disk at all** — S3 is
+> the store and `daily/` is only where an archive is built before being
+> uploaded. See "Where the copies actually live" below.
 >
 > ⚠️ **Every pre-existing archive was deleted on 2026-08-11 at Helder's
 > instruction** (566 MB freed). If nobody has pressed the button and nothing
@@ -700,22 +701,27 @@ the world is the property worth testing; that `tar` exited 0 is not.
 > are fine where they are — same box, same trust boundary — but do not copy them
 > somewhere less protected without thinking about that first.
 
-### Offsite — decided, not built (O-4a)
+### Where the copies actually live (changed 2026-08-19)
 
-Backups go to **Amazon S3**, agreed 2026-08-11, and are **deliberately parked**
-until the server has survived a real play test. Right now backups are local-only
-on the boot volume: that covers griefing and bad updates, and does not cover
-losing the volume or the instance. That is the accepted position for now.
+Helder's decision, 2026-08-19: *"I prefer to upload to S3 and have the capability
+to restore it from S3 and not use disk space to hold them out."* So:
 
-When it gets picked up, two things that are easy to miss:
+| | Where | What it is | Who removes it |
+|---|---|---|---|
+| **Off-site copies** | S3 | Every copy anyone keeps: the weekly automatic one and each "Make a copy" from the panel | An S3 lifecycle rule. Nothing on the box can — see §5b |
+| **Staging** | `backups/minecraft/daily/` | The archive being built, for the minutes between `tar` finishing and S3 confirming the size | The job itself, straight after the upload verifies |
+| **The undo** | `stacks/minecraft/data/world.replaced-*` | The world as it was immediately before a regenerate / import / restore | Nobody automatically. This is the "I've just broken it" copy |
 
-1. **Strip `.rcon-cli.env` from the archive**, or treat the bucket as
-   secret-bearing. Today the RCON password rides along in every backup.
-2. **The IAM credentials must not be able to delete.** A credential on the
-   server that can delete from the bucket means anything that compromises the
-   box takes the offsite copy with it — which is the exact scenario offsite
-   backups exist for. Write/append only, with versioning and lifecycle rules
-   doing the pruning on the S3 side rather than the client.
+So a healthy `daily/` is **empty**, and a healthy `weekly/` is empty too.
+
+⚠️ **The weekly hard link is the trap here.** `marnar-mc-backup` hard-links a
+Sunday daily into `weekly/`, and `marnar-mc-offsite` runs on Sundays — so
+deleting the daily alone leaves all 295 MB on disk under the other name. Both
+callers now remove the link as well, but only when `-ef` confirms it is the same
+inode. If you ever see a lone file in `weekly/`, that guard is what broke.
+
+Nothing prunes the world's own `world.replaced-*` directories. They are the only
+route back from a bad restore, so deleting one is a decision, not housekeeping.
 
 ### Restoring for real
 
@@ -751,6 +757,41 @@ ssh mcserver 'sudo journalctl -u marnar-mc-offsite -n 40'        # what happened
 Sundays at 04:07, offset from another weekly backup job (~03:30) so two uploads
 do not fight over the one vCPU. It calls `marnar-mc-backup` for the archive rather
 than making its own, so the `save-off` / `save-on` trap exists in exactly one place.
+
+### What is in the bucket
+
+```bash
+ssh mcserver 'sudo /usr/local/sbin/marnar-mc-s3 list'   # key, bytes, epoch
+```
+
+`marnar-mc-s3` is the only thing that talks to the bucket — the weekly job and
+the panel both go through it, so the credentials, the retry settings and the two
+traps below live in one file instead of three.
+
+| Key | What it is | Retention |
+|---|---|---|
+| `world.tar.zst` | The weekly automatic copy. **One fixed key**, versioned, overwritten each Sunday somebody played | Lifecycle rule expires **non-current versions only** — the current one never expires, however long the server sits quiet |
+| `copies/world-<stamp>.tar.zst` | One object per **"Make a copy"** from the panel | ⚠️ **Nothing. See below.** |
+
+⚠️ **The box cannot list object versions.** The IAM key is denied
+`s3:ListBucketVersions` — verified 2026-08-19 against the live key, a plain 403,
+*"no identity-based policy allows the s3:ListBucketVersions action"*. Only the
+**current** version of a key is reachable from here. That is why panel copies get
+dated keys under `copies/` instead of sharing one name: with a shared name, every
+copy but the newest would be invisible — including the one somebody took right
+before trying something risky, which is the whole reason they took it.
+
+⚠️ **`copies/` has no lifecycle rule yet, and the box cannot prune it** (no
+`DeleteObject`, on purpose — see below). Until a rule is added **in the AWS
+console**, every copy anyone makes stays for ever, at ~295 MB and ~$0.007/month
+each. Expiring `copies/` by **age** is safe, unlike `world.tar.zst`: the weekly
+key is always there underneath, so a quiet spell can never leave the world
+unprotected.
+
+⚠️ `copies/probe.txt` (5 bytes) is mine — written 2026-08-19 while checking that
+the key could write under that prefix, and **it cannot be deleted from the box**.
+It is filtered out of the panel's restore list by name. Delete it in the console
+when you are next there.
 
 ### It is supposed to skip, most weeks
 
@@ -834,19 +875,61 @@ make this bucket public, and never move these archives somewhere shared.**
 
 ### Restoring from S3
 
+**Normally you do not do this by hand.** Every copy in the bucket appears in the
+panel's **Mundo** screen with a ☁ badge, and *Restaurar* downloads it and restores
+it in one job. The panel warns first that the download costs money.
+
+Under that button, `marnar-mc-adminctl world-restore s3:<key>`:
+
+1. downloads the object to `backups/minecraft/.offsite/` and **verifies the size**
+   against S3 — *before* the running world is touched, so a dead network or a
+   missing object fails while everything is still up;
+2. lists the archive and refuses unless it really contains `world/level.dat`,
+   which also walks the whole compressed stream, so a truncated download dies here;
+3. moves the current world aside as `world.replaced-<stamp>`;
+4. unpacks, `chown`s, waits for the server to report ready;
+5. deletes the download. S3 is the store; the staging copy is not kept.
+
+⚠️ **Two traps that both cost an afternoon**, and are the reason step 2 looks the
+way it does in the source:
+
+* Archives store members as **`./world/level.dat`**, so `tar -tf archive
+  world/level.dat` matches **nothing**. The first version of that guard therefore
+  rejected every valid copy in the bucket. `marnar-mc-restore-test` did not catch
+  it because it unpacks first and then checks the file, which is a different
+  question.
+* `grep -q` exits on the first match, `tar` dies of `SIGPIPE`, and `pipefail`
+  turns that success into a failure. Hence the `set +o pipefail` subshell around
+  that one pipeline.
+
+By hand, if the panel is unavailable:
+
 ```bash
-ssh mcserver 'sudo bash -c "set -a; . /etc/marnar/mc-offsite.env; set +a
-  rclone copyto MCB:my-minecraft-backups/world.tar.zst /home/mcadmin/from-s3.tar.zst
-  zstd -t /home/mcadmin/from-s3.tar.zst"'
+ssh mcserver 'sudo /usr/local/sbin/marnar-mc-s3 list'
+ssh mcserver 'sudo /usr/local/sbin/marnar-mc-s3 get world.tar.zst /home/mcadmin/from-s3.tar.zst'
+ssh mcserver 'zstd -t /home/mcadmin/from-s3.tar.zst'
 ```
 
 Then follow §7 as if it were a local archive. Verify with `zstd -t` **before**
 stopping the server — an archive that fails the test is not a rollback, and you
 still have the running world.
 
-Costs about $0.014/month for two copies. S3 Standard is the right class: Glacier's
-90- and 180-day minimum billing durations cost *more* for a 300 MB object that
-rotates weekly.
+### What a restore costs
+
+Measured 2026-08-19, not estimated: **$0.00**. S3 egress is $0.09/GB, but the
+first **100 GB per month** are free across all AWS services and regions, and a
+copy is ~295 MB. Past that allowance it would be ~2.7¢ per restore. Storage is
+about $0.014/month for two copies; S3 Standard is genuinely cheapest at this size,
+because Glacier's 90/180-day minimum billing durations cost *more* against a
+300 MB object that rotates weekly.
+
+⚠️ **The panel says the opposite, deliberately.** Helder's instruction of
+2026-08-19, kept after being shown the figure above: warn that restoring from the
+cloud costs money and should only be done if it is really needed. The audience is
+a twelve-year-old with a button that replaces a world, and "this costs money" is a
+brake he wanted. The measured number is one tap away in *¿Qué es esto?* on the
+same screen, so nothing in the panel is untrue — but if you are here wondering
+whether a restore is affordable, it is.
 
 ---
 

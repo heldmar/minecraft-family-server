@@ -233,6 +233,10 @@ tbody tr:hover td { background: #F7FAF3; }
 .badge-online  { background: #E4F3E0; color: var(--grass-dark); }
 .badge-off     { background: #EEF0EC; color: var(--ink-soft); }
 .badge-warn    { background: #FDF0D3; color: #8A6400; }
+/* Where a copy lives. The cloud one survives this server; the local one is the
+   instant undo taken just before something risky. */
+.badge-cloud   { background: #E2F4F4; color: #1C7B7B; margin-left: 9px; }
+.badge-here    { background: #EEF0EC; color: var(--ink-soft); margin-left: 9px; }
 
 /* ---------- forms & buttons ---------- */
 .form { display: flex; flex-direction: column; gap: 15px; }
@@ -450,6 +454,10 @@ code.connect-v { background: #E6EFDD; padding: 3px 8px; border-radius: 6px; }
 .job, .confirm { width: min(720px, 100%); max-height: 86vh; overflow: auto; }
 .confirm { width: min(460px, 100%); }
 .confirm p { color: var(--ink-soft); font-size: 14px; line-height: 1.55; }
+/* The restore dialog appends a second paragraph for cloud copies. It is set as
+   textContent, deliberately — the body must never be able to carry markup — so
+   the blank line between paragraphs has to survive as whitespace. */
+#confirm-body { white-space: pre-line; }
 .confirm-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
 #job-close { margin-top: 14px; }
 

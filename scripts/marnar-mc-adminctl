@@ -32,6 +32,7 @@ AUDIT=$STACK/roster/audit.log
 # in step with UUIDMAP in that script.
 UUIDMAP=$STACK/roster/floodgate-uuids.tsv
 BACKUPS=/home/mcadmin/backups/minecraft
+S3CMD=/usr/local/sbin/marnar-mc-s3
 COMPOSE="docker compose -f $STACK/docker-compose.yml"
 
 # How many set-aside worlds to keep (D-3). Each is a full uncompressed copy of
@@ -257,23 +258,108 @@ verb_world_info() {
 EOF
 }
 
+# Copies live in two places and they are not the same thing, so the panel is told
+# which is which (Helder, 2026-08-19 — S3 is the store, the box only stages):
+#
+#   where=offsite   In S3. Every copy somebody made from the panel, plus the
+#                   weekly automatic one. Restoring costs a download.
+#   where=local     The automatic safety snapshot taken seconds before a
+#                   regenerate, an import or a restore. These stay on the box on
+#                   purpose: they are the undo for the operation that is running
+#                   right now, and a 300 MB round trip is a bad thing to need at
+#                   that moment. Restoring one is free and immediate.
+#
+# The id the browser gets back is opaque and prefixed, never a path. See
+# resolve_backup() for why that matters.
 verb_backups_list() {
   echo '{"backups":['
-  local first=1 f
+  local first=1 f line key bytes epoch
+  # Off-site first: newest first, and this is the list MarNar is meant to use.
+  while IFS=$'\t' read -r key bytes epoch; do
+    # Only our own archives. Anything else in the bucket is not ours to offer,
+    # and this is also what keeps a stray object out of a child's restore list.
+    case "$key" in
+      world.tar.zst|copies/world-*.tar.zst) ;;
+      *) continue ;;
+    esac
+    [ $first -eq 1 ] || echo ','
+    first=0
+    printf '{"id":%s,"name":%s,"bytes":%s,"mtime":%s,"where":"offsite","auto":%s}' \
+      "$(jstr "s3:$key")" "$(jstr "$(basename "$key")")" \
+      "${bytes:-0}" "${epoch:-0}" \
+      "$([ "$key" = "world.tar.zst" ] && echo true || echo false)"
+  done < <("$S3CMD" list 2>/dev/null | sort -t"$(printf '\t')" -k3,3nr)
+
   for f in $(ls -1t "$BACKUPS"/daily/world-*.tar.zst "$BACKUPS"/weekly/world-*.tar.zst 2>/dev/null); do
     [ $first -eq 1 ] || echo ','
     first=0
-    printf '{"path":%s,"name":%s,"bytes":%s,"mtime":%s,"kind":%s}' \
-      "$(jstr "$f")" "$(jstr "$(basename "$f")")" \
-      "$(stat -c %s "$f")" "$(stat -c %Y "$f")" \
-      "$(jstr "$(basename "$(dirname "$f")")")"
+    printf '{"id":%s,"name":%s,"bytes":%s,"mtime":%s,"where":"local","auto":true}' \
+      "$(jstr "local:$(basename "$f")")" "$(jstr "$(basename "$f")")" \
+      "$(stat -c %s "$f")" "$(stat -c %Y "$f")"
   done
   echo ']}'
 }
 
+# "Make a copy" now means "make a copy and put it somewhere the box burning down
+# cannot reach", which is the only kind of copy worth the button. The local
+# archive is deleted once S3 has verified the size — never before.
 verb_backup_now() {
   audit "backup.now"
-  /usr/local/sbin/marnar-mc-backup
+  /usr/local/sbin/marnar-mc-backup || die "the backup itself failed — nothing was uploaded"
+
+  local archive
+  archive=$(ls -1t "$BACKUPS"/daily/world-*.tar.zst 2>/dev/null | head -1)
+  [ -n "$archive" ] && [ -r "$archive" ] || die "no archive found after the backup ran"
+
+  # The key is built here, from a timestamp — never from anything the browser
+  # sent. There is no request field that reaches it.
+  local key="copies/world-$(date +%Y-%m-%d-%H%M%S).tar.zst"
+  echo "==> putting the copy off-site as $key"
+  "$S3CMD" put "$archive" "$key" || die "the copy was made but could NOT be sent off-site; it is still on the server"
+
+  # ⚠️ On a Sunday marnar-mc-backup hard-links the daily into weekly/, so
+  # removing the daily alone leaves the same 295 MB on disk under another name.
+  # -ef compares device and inode, so this only ever removes a true link.
+  local weekly_link="$BACKUPS/weekly/$(basename "$archive")"
+  if [ -f "$weekly_link" ] && [ "$weekly_link" -ef "$archive" ]; then
+    rm -f "$weekly_link"
+  fi
+  echo "==> removing the local archive (the copy is in the cloud now)"
+  rm -f "$archive"
+  audit "backup.now offsite $key"
+}
+
+# Turn the opaque id the panel sends into something to restore from, and refuse
+# anything that is not one of ours.
+#
+# ⚠️ This is a security boundary, not a convenience. The id arrives from a
+# browser. `local:` ids may not contain a slash or a dot-dot and must look like
+# an archive this system produced; `s3:` ids must match one of exactly two
+# shapes. Everything else dies here, before any world is moved aside.
+resolve_backup() {
+  local id=$1
+  case "$id" in
+    local:*)
+      local name=${id#local:}
+      case "$name" in */*|*..*|'') die "no such backup: $name" ;; esac
+      [[ "$name" =~ ^world-[0-9A-Za-z._-]+\.tar\.zst$ ]] || die "no such backup: $name"
+      local src
+      src=$(ls -1 "$BACKUPS"/daily/"$name" "$BACKUPS"/weekly/"$name" 2>/dev/null | head -1)
+      [ -n "$src" ] && [ -f "$src" ] || die "no such backup: $name"
+      echo "local $src"
+      ;;
+    s3:*)
+      local key=${id#s3:}
+      case "$key" in
+        world.tar.zst) ;;
+        copies/world-*.tar.zst)
+          [[ "$key" =~ ^copies/world-[0-9A-Za-z._-]+\.tar\.zst$ ]] || die "no such backup: $key" ;;
+        *) die "no such backup: $key" ;;
+      esac
+      echo "offsite $key"
+      ;;
+    *) die "no such backup: $id" ;;
+  esac
 }
 
 # Keep only the most recent $KEEP entries matching a glob, deleting the rest.
@@ -456,21 +542,61 @@ verb_world_import() {
 }
 
 verb_world_restore() {
-  local name=${1:?backup name}
-  case "$name" in */*|*..*) die "backup must be a bare filename" ;; esac
-  local src
-  src=$(ls -1 "$BACKUPS"/daily/"$name" "$BACKUPS"/weekly/"$name" 2>/dev/null | head -1)
-  [ -n "$src" ] && [ -f "$src" ] || die "no such backup: $name"
+  local id=${1:-}
+  [ -n "$id" ] || die "no backup chosen"
 
-  audit "world.restore $name"
-  preserve_current_world "restore $name"
-  echo "==> restoring $name"
+  # ⚠️ Command substitution with an explicit status check, NOT
+  # `read ... < <(resolve_backup ...)`. In a process substitution the `die`
+  # inside resolve_backup would exit that subshell only: the error would print,
+  # the status would be lost, and this function would carry on with an empty
+  # path and start destroying a world on behalf of a rejected id.
+  local where src staged="" resolved
+  resolved=$(resolve_backup "$id") || exit 1
+  read -r where src <<<"$resolved"
+  [ -n "$where" ] && [ -n "$src" ] || die "no such backup: $id"
+
+  # ⚠️ The download happens BEFORE preserve_current_world, deliberately. If the
+  # network is down or the object has gone, this fails while the world is still
+  # running and untouched — instead of after it has been stopped and moved aside,
+  # which is the moment you least want to discover there is nothing to restore.
+  if [ "$where" = offsite ]; then
+    echo "==> bringing $src down from the cloud (this is the part that costs)"
+    staged="$BACKUPS/.offsite/$(basename "$src")"
+    mkdir -p "$BACKUPS/.offsite"
+    "$S3CMD" get "$src" "$staged" || die "could not download the copy — nothing has been changed"
+    src="$staged"
+  fi
+
+  # An archive that unpacks into nothing, or into the wrong shape, is worth
+  # catching before the running world is moved aside. Listing it also walks the
+  # whole compressed stream, so a truncated download fails here too.
+  #
+  # ⚠️ Two traps, both found by running this against a real archive:
+  #
+  #   1. marnar-mc-backup stores members as `./world/level.dat`, so asking tar
+  #      for the member `world/level.dat` finds NOTHING and this guard would
+  #      have refused every valid copy in the bucket. Match the listing instead,
+  #      allowing either spelling.
+  #   2. `grep -q` exits at the first match and tar dies of SIGPIPE, which with
+  #      `pipefail` (set at the top of this file) turns a success into a
+  #      failure. Hence the subshell that turns pipefail off for this one line.
+  if ! ( set +o pipefail
+         tar --use-compress-program=unzstd -tf "$src" 2>/dev/null \
+           | grep -qE '^\./?world/level\.dat$' ); then
+    [ -n "$staged" ] && rm -f "$staged"
+    die "that copy does not contain a world (no world/level.dat) — nothing has been changed"
+  fi
+
+  audit "world.restore $id"
+  preserve_current_world "restore $(basename "$src")"
+  echo "==> restoring $(basename "$src")"
   mkdir -p "$WORLD"
   tar --use-compress-program=unzstd -C "$DATA" -xf "$src" \
-    || die "restore failed — the previous world is still at $DATA/world.replaced-*"
+    || { [ -n "$staged" ] && rm -f "$staged"; die "restore failed — the previous world is still at $DATA/world.replaced-*"; }
   chown -R 1000:1000 "$DATA"
+  [ -n "$staged" ] && rm -f "$staged"   # downloaded, used, gone: S3 is the store
   wait_for_ready
-  echo "==> restored from $name"
+  echo "==> restored from $(basename "$src")"
   audit "world.restore complete"
 }
 

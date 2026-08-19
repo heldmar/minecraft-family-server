@@ -117,7 +117,7 @@
       "help.seed": "La semilla es el número con el que Minecraft dibujó tu mundo. Funciona como la receta: dos mundos hechos con la misma semilla salen exactamente iguales, con las mismas montañas, las mismas cuevas y los mismos pueblos. Por eso, si guardás este número, podés volver a crear este mundo desde cero cuando quieras.",
       "help.border": "El borde es una pared invisible que marca hasta dónde podés caminar. Tu mundo mide 3000 bloques de lado a lado. Sin borde, Minecraft seguiría inventando terreno para siempre y el mundo ocuparía cada vez más espacio en el disco. En el Nether cada bloque cuenta por ocho, así que ahí el borde es ocho veces más chico.",
       "help.size": "Lo que ocupa tu mundo guardado. Crece cada vez que alguien explora un lugar nuevo, porque el servidor tiene que anotar cómo es ese pedazo de terreno y recordarlo para siempre. Por eso existe el borde: sin un límite, esto no pararía de crecer.",
-      "help.backups": "Una copia de seguridad es una foto de tu mundo guardada aparte. Si algo sale mal, podés volver a esa foto y recuperar todo como estaba. ⚠️ Estas copias no se hacen solas: se hacen cuando tocás «Hacer una copia», y también automáticamente justo antes de algo peligroso, por las dudas.",
+      "help.backups": "Una copia de seguridad es una foto de tu mundo guardada aparte. Si algo sale mal, podés volver a esa foto y recuperar todo como estaba. ⚠️ Estas copias no se hacen solas: se hacen cuando tocás «Hacer una copia», y también automáticamente justo antes de algo peligroso, por las dudas. Las que hacés vos se van a la nube, así siguen estando aunque el servidor entero desaparezca.",
 
       "help.sync": "Cuando agregás a alguien, su nombre se guarda en una lista y después hay que avisarle al juego que esa lista cambió. Eso es sincronizar. Normalmente pasa solo. Este botón está por si alguna vez agregaste a alguien y el servidor todavía no se enteró.",
       "help.import": "Traer un mundo que ya existe — uno que jugaste en tu tablet, o que te pasó un amigo — y ponerlo en el servidor para jugarlo entre todos. Reemplaza el mundo que hay ahora, así que antes se guarda una copia del actual.",
@@ -126,7 +126,7 @@
       "help.audit": "Una libreta donde queda anotado todo lo que se hizo desde acá: a quién agregaste, a quién sacaste, cuándo se hizo una copia. Sirve para responder «¿y esto cuándo pasó?» sin tener que acordarse.",
       "help.console": "Lo que el servidor va escribiendo mientras trabaja, en su propio idioma. No hace falta entender todo. Si algo falla, estas líneas son las que explican por qué.",
       "help.platform": "Minecraft viene en dos versiones que son distintas por dentro. La de PlayStation, tablets, celulares y Switch se llama Bedrock. La de computadora se llama Java. Tu servidor acepta las dos al mismo tiempo, pero necesita saber cuál usa cada jugador.",
-      "help.disk": "Cuánto lugar están ocupando las copias de tu mundo. El disco no es infinito, y esta computadora también tiene otras páginas web adentro. Las copias viejas se borran solas y siempre se guarda la más nueva.",
+      "help.disk": "Cuánto ocupan todas las copias juntas. Casi todas están en la nube, en Amazon, no en esta computadora: guardarlas ahí cuesta alrededor de un centavo de dólar por mes cada una. Bajar una para volver atrás se paga aparte, y por eso conviene hacerlo solo cuando de verdad hace falta. La copia automática más nueva no se borra nunca.",
 
       /* --- jugadores --------------------------------------------------- */
       "players.rosterLabel": "En la lista",
@@ -207,11 +207,14 @@
       "world.thWhen": "Cuándo",
       "world.thSize": "Tamaño",
       "world.noBackups": "No hay ninguna copia guardada.",
-      "world.notAuto": "ℹ️ Las copias no se hacen solas. Se hacen cuando tocás el botón, y también solas justo antes de algo peligroso.",
-      "world.diskUsed": "Las copias ocupan {mb} MB.",
+      "world.notAuto": "ℹ️ Las copias no se hacen solas. Se hacen cuando tocás el botón, y también solas justo antes de algo peligroso. Las que tocás vos se guardan en la nube; las de antes de algo peligroso quedan acá, para poder deshacerlo al toque.",
+      "world.diskUsed": "Entre todas, las copias ocupan {mb} MB.",
       "world.restore": "Volver a esta copia",
       "world.restoreTitle": "¿Volver a esta copia?",
       "world.restoreBody": "Tu mundo vuelve a como estaba {when}. Todo lo que se construyó después de ese momento se pierde. Antes de cambiar nada se guarda una copia del mundo de ahora, así que también podés volver atrás de esto.",
+      "world.restoreCost": "⚠️ Esta copia está guardada en la nube. Bajarla cuesta plata, así que hacelo solo si de verdad hace falta.",
+      "world.whereCloud": "en la nube",
+      "world.whereHere": "en el servidor",
 
       "world.importTitle": "Traer un mundo que ya existe",
       "world.importFile": "El archivo del mundo",
@@ -381,7 +384,7 @@
       "help.seed": "The seed is the number Minecraft used to draw your world. Think of it as the recipe: two worlds made from the same seed come out exactly alike, with the same mountains, the same caves and the same villages. So if you keep this number, you can build this exact world again from scratch whenever you want.",
       "help.border": "The border is an invisible wall marking how far you can walk. Your world is 3000 blocks across. Without a border, Minecraft would keep inventing new land forever and the world would eat more and more disk space. In the Nether every block counts as eight, so the border there is eight times smaller.",
       "help.size": "How much space your saved world takes up. It grows every time someone explores somewhere new, because the server has to write down what that patch of land looks like and remember it forever. That's exactly why the border exists — without a limit, this would never stop growing.",
-      "help.backups": "A backup is a photo of your world, kept somewhere safe. If something goes wrong, you can go back to that photo and get everything the way it was. ⚠️ These do not happen on their own: one is made when you press \"Make a copy\", and one is also made automatically right before anything risky, just in case.",
+      "help.backups": "A backup is a photo of your world, kept somewhere safe. If something goes wrong, you can go back to that photo and get everything the way it was. ⚠️ These do not happen on their own: one is made when you press \"Make a copy\", and one is also made automatically right before anything risky, just in case. The ones you make go to the cloud, so they are still there even if the whole server disappears.",
 
       "help.sync": "When you add someone, their name goes into a list — and then the game has to be told the list changed. That's what syncing is. It normally happens by itself. This button is here for the rare time you added someone and the server hasn't noticed yet.",
       "help.import": "Bring in a world that already exists — one you played on your tablet, or one a friend sent you — and put it on the server so everyone can play it together. It replaces the world you have now, so a copy of the current one is saved first.",
@@ -390,7 +393,7 @@
       "help.audit": "A notebook where everything done from this panel gets written down: who you added, who you removed, when a copy was made. It's for answering \"wait, when did that happen?\" without having to remember.",
       "help.console": "What the server writes down as it works, in its own language. You don't need to understand all of it. When something breaks, these lines are what explain why.",
       "help.platform": "Minecraft comes in two versions that are different on the inside. The one on PlayStation, tablets, phones and Switch is called Bedrock. The one on computers is called Java. Your server accepts both at the same time, but it needs to know which one each player uses.",
-      "help.disk": "How much room your world's copies are taking up. The disk isn't infinite, and this computer has some websites living on it too. Old copies delete themselves, and the newest one is always kept.",
+      "help.disk": "How much room all the copies take up together. Most of them live in the cloud, at Amazon, not on this computer: keeping one there costs about a cent a month. Bringing one back down is charged separately, which is why it is worth doing only when you really need it. The newest automatic copy is never deleted.",
 
       /* --- players ------------------------------------------------------ */
       "players.rosterLabel": "On the list",
@@ -471,11 +474,14 @@
       "world.thWhen": "When",
       "world.thSize": "Size",
       "world.noBackups": "There are no saved copies.",
-      "world.notAuto": "ℹ️ Copies are not made on their own. One is made when you press the button, and one is made automatically right before anything risky.",
-      "world.diskUsed": "The copies take up {mb} MB.",
+      "world.notAuto": "ℹ️ Copies are not made on their own. One is made when you press the button, and one is made automatically right before anything risky. The ones you make go to the cloud; the ones taken before something risky stay here, so undoing it is instant.",
+      "world.diskUsed": "All the copies together take up {mb} MB.",
       "world.restore": "Go back to this copy",
       "world.restoreTitle": "Go back to this copy?",
       "world.restoreBody": "Your world goes back to how it was {when}. Everything built after that moment is lost. Before anything changes, a copy of the world you have now is saved, so you can undo this too.",
+      "world.restoreCost": "⚠️ This copy is kept in the cloud. Downloading it costs money, so only do it if you really need to.",
+      "world.whereCloud": "in the cloud",
+      "world.whereHere": "on the server",
 
       "world.importTitle": "Bring in a world you already have",
       "world.importFile": "The world file",

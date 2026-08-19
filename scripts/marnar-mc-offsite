@@ -50,6 +50,20 @@
 # its 10 TB/month allowance. See docs/RUNBOOK.md §5b for why S3 Standard is genuinely
 # the cheapest class at this size and the Glacier tiers would cost MORE.
 #
+# ── The archive does not stay on disk ────────────────────────────────────────
+#
+# Changed 2026-08-19 by Helder: S3 is the store, the box only stages. This builds
+# the archive, uploads it, verifies the size in S3, and then DELETES the local
+# copy. The only archives that live on the box now are the automatic safety
+# snapshots marnar-mc-adminctl takes immediately before a regenerate, an import
+# or a restore — those must stay local, because they are the undo for the
+# operation running at that moment and waiting on a 300 MB upload before a
+# regenerate can start is a worse trade than 300 MB of a 158 GB disk.
+#
+# ⚠️ The delete happens only after `marnar-mc-s3 put` has verified the object's
+# size in S3. Never move it earlier. "Uploaded" is not a thing rclone's exit
+# status can be trusted to mean on its own — see marnar-mc-s3, TRAP 1.
+#
 # Config: /etc/marnar/mc-offsite.env    (rclone S3 creds + S3_BASE)  mode 600, root
 #         /etc/marnar/reboot-check.env  (NTFY_SERVER, NTFY_TOPIC)    shared
 #
@@ -62,6 +76,7 @@ NTFY_CONFIG=/etc/marnar/reboot-check.env
 STATE=/var/lib/marnar/mc-offsite.state
 WORLD=/home/mcadmin/stacks/minecraft/data/world
 BACKUP_CMD=/usr/local/sbin/marnar-mc-backup
+S3=/usr/local/sbin/marnar-mc-s3
 LOCAL_DAILY=/home/mcadmin/backups/minecraft/daily
 HOST=$(hostname -s)
 
@@ -86,16 +101,10 @@ log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*"; }
 
 : "${NTFY_SERVER:?NTFY_SERVER not set}"
 : "${NTFY_TOPIC:?NTFY_TOPIC not set}"
-: "${S3_BASE:?S3_BASE not set in $CONFIG}"
-: "${RCLONE_CONFIG_MCB_ACCESS_KEY_ID:?rclone S3 credentials not set in $CONFIG}"
-# rclone probes the destination with CreateBucket before writing, which a properly
-# scoped IAM policy refuses. Default it on here rather than trusting the config file:
-# a missing value fails as a 403 at 04:00 on a Sunday, not now.
-: "${RCLONE_CONFIG_MCB_NO_CHECK_BUCKET:=true}"
 
-export RCLONE_CONFIG_MCB_TYPE RCLONE_CONFIG_MCB_PROVIDER RCLONE_CONFIG_MCB_REGION \
-       RCLONE_CONFIG_MCB_ACCESS_KEY_ID RCLONE_CONFIG_MCB_SECRET_ACCESS_KEY \
-       RCLONE_CONFIG_MCB_SERVER_SIDE_ENCRYPTION RCLONE_CONFIG_MCB_NO_CHECK_BUCKET
+# The S3 credentials, the rclone flags and the no-check-bucket workaround all
+# live in marnar-mc-s3 now, which is also what the admin panel uses. One place
+# that talks to the bucket, not two that drift apart.
 
 notify() {  # notify <title> <priority> <tags> <body>
     local args=(-s -o /dev/null -w '%{http_code}' --max-time 20 --retry 2 --retry-delay 5
@@ -113,12 +122,13 @@ die() {
 
 **$1**
 
-The world itself is fine and the local backups in \`$LOCAL_DAILY\` are untouched —
-what is missing is this week's copy in S3. Nothing in S3 was deleted."
+The world itself is fine and whatever is already in S3 is untouched — nothing there
+was deleted, and last week's copy is still the one you would restore from. What is
+missing is *this* week's copy."
     exit 1
 }
 
-command -v rclone >/dev/null || die "rclone is not installed"
+[ -x "$S3" ] || die "$S3 is missing or not executable"
 
 # --- has anyone played since the last upload? --------------------------------
 # Newest mtime under world/players/, as a Unix timestamp. See the header for why
@@ -147,14 +157,11 @@ if [ "$PLAYED" -le "$LAST" ] && ! $FORCE; then
     # for as long as nobody plays. The failure would surface on the day it is
     # needed, which is the worst day to discover it.
     #
-    # ⚠️ Test the OUTPUT, not the exit status. `rclone lsjson` exits 0 for an object
-    # that does not exist, returning an empty JSON array — so `if rclone lsjson ...`
-    # is always true and would make this whole guard a no-op. Measured 2026-08-19.
-    # The verification after an upload, below, is written the same way for the same
-    # reason. Do not "tidy" either of them into an exit-status check.
+    # `marnar-mc-s3 stat` fails when the object is not there, which is the whole
+    # point — and it is careful about HOW it decides that, because `rclone lsjson`
+    # exits 0 for a missing object. See marnar-mc-s3, TRAP 1.
     REMOTE_KEY=world.tar.zst
-    REMOTE_CHECK=$(rclone lsjson "$S3_BASE/$REMOTE_KEY" 2>/dev/null \
-                   | grep -o '"Size":[0-9]*' | head -1 | cut -d: -f2)
+    REMOTE_CHECK=$("$S3" stat "$REMOTE_KEY" 2>/dev/null)
     if [ -n "$REMOTE_CHECK" ] && [ "$REMOTE_CHECK" -gt 0 ] 2>/dev/null; then
         log "no play since the last off-site copy ($(date -d "@$LAST" '+%Y-%m-%d %H:%M')) — skipping"
         log "no archive built, no upload, no cost"
@@ -176,9 +183,9 @@ log "world has been played since the last copy (newest player file: $(date -d "@
 
 if $DRY; then
     log "dry run — would back up and upload to $S3_BASE"
-    rclone lsjson "$S3_BASE" --max-depth 1 >/dev/null 2>&1 \
-        && log "dry run — $S3_BASE is reachable" \
-        || log "dry run — WARNING: cannot reach $S3_BASE"
+    "$S3" list >/dev/null 2>&1 \
+        && log "dry run — the bucket is reachable" \
+        || log "dry run — WARNING: cannot reach the bucket"
     exit 0
 fi
 
@@ -205,28 +212,29 @@ SIZE=$(stat -c %s "$ARCHIVE")
 # copy during a quiet spell. The date of each copy is not lost, it is carried by
 # the S3 version's own timestamp, which is what the lifecycle rule reads too.
 REMOTE_KEY=world.tar.zst
-log "uploading $(basename "$ARCHIVE") ($(numfmt --to=iec "$SIZE")) to $S3_BASE/$REMOTE_KEY"
+log "uploading $(basename "$ARCHIVE") ($(numfmt --to=iec "$SIZE")) as $REMOTE_KEY"
 
-# nice/ionice: this shares one vCPU with the game. A weekly upload must never be
-# the reason somebody's build lags.
-nice -n 19 ionice -c3 rclone copyto "$ARCHIVE" "$S3_BASE/$REMOTE_KEY" \
-    --s3-chunk-size 16M --transfers 1 --retries 3 --low-level-retries 10 \
-    --stats-one-line --stats 30s \
-    || die "rclone copyto failed — this week's world is NOT off-site"
-
-# --- verify it actually landed, at the right size ----------------------------
-# An upload that reports success and leaves a truncated object is the failure that
-# matters, because it is only discovered on the day it is needed. Checking the size
-# in S3 is cheap and catches it now instead.
-REMOTE_SIZE=$(rclone lsjson "$S3_BASE/$REMOTE_KEY" 2>/dev/null \
-              | grep -o '"Size":[0-9]*' | head -1 | cut -d: -f2)
-[ -n "$REMOTE_SIZE" ] || die "uploaded object is not listable in S3 — treat this week as unprotected"
-[ "$REMOTE_SIZE" = "$SIZE" ] \
-    || die "size mismatch in S3: local $SIZE, remote $REMOTE_SIZE — the copy is truncated"
-
-log "verified in S3: $REMOTE_KEY $REMOTE_SIZE bytes"
+# marnar-mc-s3 does the transfer AND verifies the size in S3 afterwards, so a
+# truncated object fails here rather than on the day somebody needs it.
+"$S3" put "$ARCHIVE" "$REMOTE_KEY" || die "the upload failed — this week's world is NOT off-site"
 
 mkdir -p "$(dirname "$STATE")"
 echo "$PLAYED" > "$STATE"
+
+# --- and now let go of the local copy ----------------------------------------
+# Only past this line, and only because `put` verified the size in S3. If that
+# verification is ever weakened, this delete becomes the bug that loses a world.
+#
+# ⚠️ marnar-mc-backup hard-links a Sunday daily into weekly/ — and this job runs
+# on Sundays, so deleting the daily alone would leave all 295 MB on disk under
+# the other name, quietly undoing the whole point. Remove the link too, but only
+# when it really is the same file (-ef compares device and inode).
+WEEKLY_LINK=/home/mcadmin/backups/minecraft/weekly/$(basename "$ARCHIVE")
+if [ -f "$WEEKLY_LINK" ] && [ "$WEEKLY_LINK" -ef "$ARCHIVE" ]; then
+  log "removing the weekly hard link to the same archive"
+  rm -f "$WEEKLY_LINK" || log "WARNING: could not remove $WEEKLY_LINK"
+fi
+log "removing the local archive — S3 is the store now"
+rm -f "$ARCHIVE" || log "WARNING: could not remove $ARCHIVE"
 
 log "done — off-site copy complete"
