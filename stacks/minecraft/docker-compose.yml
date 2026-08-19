@@ -117,7 +117,13 @@ services:
 
       # F-1a / F-1c / F-1d
       PVP: "false"
-      DIFFICULTY: "normal"
+      # Difficulty is settable from the admin panel, so it cannot be a literal
+      # here: itzg rewrites server.properties from this environment on every
+      # container start, which would silently undo a panel change at the next
+      # weekly restart. It goes through .env for the same reason MC_SEED does.
+      # Changing it needs "compose up -d" (recreate), not "compose restart" —
+      # a restart reuses the container's baked-in environment.
+      DIFFICULTY: "${MC_DIFFICULTY:-normal}"
       ALLOW_NETHER: "true"
       MODE: "survival"
       SPAWN_PROTECTION: "0"
