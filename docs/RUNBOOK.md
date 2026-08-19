@@ -621,6 +621,20 @@ for. Use `--force` to upload anyway — which is what you want after a restore, 
 restoring an old world moves those timestamps *backwards* and the skip logic would
 otherwise consider the copy already made.
 
+**It will not skip if the copy in S3 has gone missing.** "Nobody played, so the
+existing copy is fine" only holds while a copy exists, so the skip path checks that
+`world.tar.zst` is really in the bucket and uploads instead of skipping if it is not,
+with an ntfy alert. Without that check, a copy deleted by accident — or by a
+lifecycle rule expiring current versions instead of non-current ones — would leave
+the world unprotected while the skip decision quietly re-confirmed itself every
+Sunday, surfacing only on the day someone needed it.
+
+⚠️ **`rclone lsjson` exits 0 for an object that does not exist**, returning an empty
+JSON array. Both the skip guard and the post-upload verification therefore test the
+*output* for a size, never the exit status. Measured 2026-08-19 — the first version
+of that guard used `if rclone lsjson ...` and was a silent no-op. Do not tidy either
+of them back into an exit-status check.
+
 ⚠️ **Do not "fix" this to check the mtime of the world tree instead.** Paper
 rewrites `chunk_tickets.dat`, `raids.dat` and `level_overrides.dat` on every
 autosave whether or not anyone is online, so the tree always looks freshly modified
@@ -631,6 +645,19 @@ and nothing would ever be skipped.
 The bucket is **versioned**, every upload overwrites the single key
 `world.tar.zst`, and the lifecycle rule expires only **non-current** versions
 (7 days, keeping 1 newer). The current version never expires.
+
+Versioning is **verified**, not assumed: a `HEAD` on the object returns an
+`X-Amz-Version-Id` header, which a non-versioned bucket does not send.
+
+```bash
+ssh mcserver 'sudo bash -c "set -a; . /etc/marnar/mc-offsite.env; set +a
+  rclone lsjson \$S3_BASE/world.tar.zst --dump headers"' 2>&1 | grep -i version-id
+```
+
+The lifecycle rule itself **cannot be checked from the box** — the scoped key has no
+`s3:GetLifecycleConfiguration`, deliberately. Helder confirmed on 2026-08-19 that he
+created it as specified; if you need to see it, that is an AWS console job. The
+missing-copy guard above is what protects the world if it was ever set up wrong.
 
 ⚠️ **Never change this to "expire objects after N days."** Combined with the skip
 logic above, an age rule deletes the last copy during a quiet spell while the skip

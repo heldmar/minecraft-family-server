@@ -138,9 +138,38 @@ if [ "$PLAYED" = "0" ]; then
 fi
 
 if [ "$PLAYED" -le "$LAST" ] && ! $FORCE; then
-    log "no play since the last off-site copy ($(date -d "@$LAST" '+%Y-%m-%d %H:%M')) — skipping"
-    log "no archive built, no upload, no cost"
-    exit 0
+    # Before skipping, confirm the thing we are skipping on behalf of is actually
+    # still there. "Nobody played, so the existing copy is fine" is only sound while
+    # an existing copy exists — and this script cannot see whether it does without
+    # asking. A lifecycle rule with "expire current versions" ticked by mistake, or
+    # a deletion in the console, would otherwise leave the world with no off-site
+    # copy at all AND a skip decision that quietly re-confirms itself every Sunday
+    # for as long as nobody plays. The failure would surface on the day it is
+    # needed, which is the worst day to discover it.
+    #
+    # ⚠️ Test the OUTPUT, not the exit status. `rclone lsjson` exits 0 for an object
+    # that does not exist, returning an empty JSON array — so `if rclone lsjson ...`
+    # is always true and would make this whole guard a no-op. Measured 2026-08-19.
+    # The verification after an upload, below, is written the same way for the same
+    # reason. Do not "tidy" either of them into an exit-status check.
+    REMOTE_KEY=world.tar.zst
+    REMOTE_CHECK=$(rclone lsjson "$S3_BASE/$REMOTE_KEY" 2>/dev/null \
+                   | grep -o '"Size":[0-9]*' | head -1 | cut -d: -f2)
+    if [ -n "$REMOTE_CHECK" ] && [ "$REMOTE_CHECK" -gt 0 ] 2>/dev/null; then
+        log "no play since the last off-site copy ($(date -d "@$LAST" '+%Y-%m-%d %H:%M')) — skipping"
+        log "no archive built, no upload, no cost"
+        exit 0
+    fi
+    log "WARNING: nobody has played, but $REMOTE_KEY is MISSING from $S3_BASE"
+    log "uploading anyway rather than skipping — see docs/RUNBOOK.md §5b"
+    notify "Minecraft off-site copy had vanished" "default" "warning,floppy_disk" \
+"The weekly off-site copy on \`$HOST\` found **no world backup in S3** even though
+nobody has played since the last one was made.
+
+Something removed it — most likely a lifecycle rule expiring current versions rather
+than only non-current ones. Uploading a fresh copy now instead of skipping, so the
+world is protected either way, but **the bucket's lifecycle rule is worth checking**:
+it should expire only *non-current* versions."
 fi
 
 log "world has been played since the last copy (newest player file: $(date -d "@$PLAYED" '+%Y-%m-%d %H:%M'))"
