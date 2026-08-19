@@ -75,14 +75,14 @@ server itself is saying.
 
 | | |
 |---|---|
-| **Host** | One small VM. Proven on a 1 vCPU / 6 GB ARM cloud VM, `aarch64` |
+| **Host** | One small Linux VM with Docker. Proven on a 1 vCPU / 6 GB `aarch64` box — it does not need more |
 | **Server** | PaperMC (Java Edition) + GeyserMC + Floodgate, in Docker |
-| **Concurrency** | 6 players targeted on a single shared vCPU — raised from 4 after a real four-player session logged no tick lag |
+| **Concurrency** | 6 players on a single shared vCPU — raised from 4 after a four-player session logged no tick lag |
 | **Off-site backups** | Any S3-compatible bucket; ~$0.014/month at ~295 MB a copy |
-| **TLS / auth** | A reverse proxy (Nginx Proxy Manager here) with an access list; no user database, by decision |
+| **TLS / auth** | Any reverse proxy with an access list (Nginx Proxy Manager in the reference deploy); no user database, by decision |
 
-**Why not the official Bedrock server:** it is x86_64-only, and cheap always-free cloud tiers are
-usually ARM. Paper + Geyser is what makes an ARM box viable — and it brings Java players along.
+**Why not the official Bedrock server:** it is x86_64-only, and the cheapest always-free cloud tiers
+are ARM. Paper + Geyser is what makes an ARM box viable — and it brings Java players along.
 
 ## How players connect
 
@@ -177,11 +177,15 @@ and no secrets are committed.
 live on the server, not here. This repository describes how to *build* the server; who plays on
 it is usage data about children, and does not belong in something whose value is being copyable.
 
-## A note on hosting at home
+## Before you host it at home
 
-This was originally planned for a Raspberry Pi on a home connection and moved to a cloud VM
-because **nothing inbound from the internet reached it** — CGNAT, double NAT, ISP port blocking
-and host firewalling were each ruled out by measurement, and the router silently ignored
-port-forwarding rules it displayed as enabled. If you plan to self-host at home, prove an
-inbound connection *first*; the diagnostic table is in
+If you plan to run this on a machine behind a domestic router rather than a VM with a public IP,
+**prove an inbound connection first** — before installing anything. A home connection can fail to
+accept inbound traffic for several independent reasons: carrier-grade NAT, a second layer of NAT
+inside the house, the ISP blocking the port, host firewalling, or a router that displays
+port-forwarding rules as enabled and does not apply them. Each has to be ruled out by
+measurement, not by reading the router's UI. The diagnostic sequence that separates them is in
 [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) §4.2.
+
+A small cloud VM with a static public IP avoids all of it, at the cost of latency to your
+players.
