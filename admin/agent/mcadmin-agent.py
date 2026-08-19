@@ -231,6 +231,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/world":
             out, err = run_verb(["world-info"], actor, timeout=30)
             return self.reply(200, {"error": err}) if err else self.reply_raw(out)
+        if path == "/settings":
+            out, err = run_verb(["settings-get"], actor, timeout=30)
+            return self.reply(200, {"error": err}) if err else self.reply_raw(out)
         if path == "/backups":
             out, err = run_verb(["backups-list"], actor, timeout=30)
             return self.reply(200, {"error": err}) if err else self.reply_raw(out)
@@ -268,6 +271,15 @@ class Handler(BaseHTTPRequestHandler):
             tag = str(data.get("tag", "")).strip()
             note = str(data.get("note", ""))[:80]
             out, err = run_verb(["players-add", platform, tag, note], actor)
+            return self.reply(400 if err else 200, {"error": err} if err else {"ok": True, "output": out})
+
+        # One setting per request. adminctl owns the allow-list of keys and the
+        # type check on the value; nothing here decides what is legal, it only
+        # passes the pair through and reports the refusal.
+        if path == "/settings":
+            key = str(data.get("key", "")).strip()
+            value = str(data.get("value", "")).strip()
+            out, err = run_verb(["settings-set", key, value], actor)
             return self.reply(400 if err else 200, {"error": err} if err else {"ok": True, "output": out})
 
         if path == "/players/sync":

@@ -57,6 +57,16 @@ The allowlist was commissioned **on, enforced and empty**, including for MarNar,
 so there was never a window where the server was reachable and open. Add
 gamertags in the [admin panel](admin/README.md).
 
+The players can also change **how the world plays** — difficulty, keeping your
+items when you die, phantoms, whether one sleeper skips the night — from the
+panel's *How we play* section, without an operator and without losing the
+world. That separation is deliberate: everything they asked to control is a
+live setting, so none of it should cost them their builds. Making a new world
+stays a separate, destructive operation. See F-12 and
+[`docs/RUNBOOK.md`](docs/RUNBOOK.md) §3e — which also carries the two traps MC
+26.2 introduced, since gamerules are now **per-dimension** and renamed to
+snake_case, and the obvious one-line write silently changes only the overworld.
+
 Start here: **[`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md)** for what was
 asked for and why, **[`docs/RUNBOOK.md`](docs/RUNBOOK.md)** for operating it.
 

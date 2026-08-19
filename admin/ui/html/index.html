@@ -43,6 +43,9 @@
     <button class="nav-item" data-view="world">
       <span class="nav-ico">🌍</span> <span data-i18n="nav.world"></span>
     </button>
+    <button class="nav-item" data-view="settings">
+      <span class="nav-ico">⚙️</span> <span data-i18n="nav.settings"></span>
+    </button>
     <button class="nav-item" data-view="activity">
       <span class="nav-ico">📜</span> <span data-i18n="nav.activity"></span>
     </button>
@@ -255,6 +258,23 @@
   </section>
 
   <!-- ================= ACTIVITY ================= -->
+  <!-- ================= SETTINGS =================
+       Deliberately its own section rather than a card inside World. Everything
+       here is instant, reversible and harmless; the World view holds the button
+       that wipes the map. Putting the knob a 12-year-old opens every week next
+       to the one that destroys three months of building is a layout decision,
+       and this is the layout decision. -->
+  <section class="view is-hidden" id="view-settings">
+    <div class="cards">
+      <div class="card">
+        <div class="card-head"><h2 data-i18n="settings.title"></h2></div>
+        <details class="help"><summary data-i18n="help.open"></summary><p data-i18n="help.settings"></p></details>
+        <div class="notice" data-i18n="settings.instant"></div>
+        <div id="settings-list"></div>
+      </div>
+    </div>
+  </section>
+
   <section class="view is-hidden" id="view-activity">
     <div class="split">
       <div class="card">

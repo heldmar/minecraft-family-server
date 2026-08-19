@@ -389,6 +389,10 @@ verb_world_regenerate() {
 
   wait_for_ready
   pregenerate "$size"
+  # A new world starts at vanilla gamerule defaults, which throws away every
+  # play setting the panel was told to use. Put them back before anyone joins.
+  echo "==> re-applying play settings"
+  verb_settings_apply || echo "WARNING: could not re-apply play settings"
   echo "==> done. New world generated with seed ${seed:-random}, border $size."
   audit "world.regenerate complete"
 }
@@ -452,6 +456,177 @@ verb_world_restore() {
   audit "world.restore complete"
 }
 
+# ---------------------------------------------------------------------------
+# play settings
+#
+# The settings MarNar is allowed to change from the panel. Two things make this
+# less trivial than "run the command the user asked for":
+#
+#   1. RCON is command execution. Nothing from the browser is interpolated into
+#      an rcon string — a key must appear in SETTING_KEYS and its value must
+#      pass the type check below, or nothing runs. The rule name sent to the
+#      server comes from this file, never from the request.
+#
+#   2. MC 26.2 made gamerules PER-DIMENSION (world/dimensions/*/data/minecraft/
+#      game_rules.dat), and the RCON console runs in the overworld. A bare
+#      `gamerule x true` therefore changes the overworld and silently leaves the
+#      Nether and the End alone — which is exactly how this world ended up
+#      keeping your items at home and eating them in the Nether. Every write
+#      below goes through all three dimensions, deliberately.
+#
+# 26.2 also renamed every rule to snake_case: keepInventory -> keep_inventory,
+# naturalRegeneration -> natural_health_regeneration, doInsomnia ->
+# spawn_phantoms, doDaylightCycle -> advance_time. The old camelCase names are
+# rejected outright, so nothing here can be checked against a pre-26.2 memory.
+# The authoritative list lives in the server jar at
+# net/minecraft/world/level/gamerules/GameRules.class.
+# ---------------------------------------------------------------------------
+SETTINGS=/etc/marnar/mc-settings.env
+DIMENSIONS="overworld the_nether the_end"
+
+# Order matters: it is the order the panel renders them in.
+SETTING_KEYS="difficulty keep_inventory sleep spawn_monsters spawn_phantoms mob_griefing fall_damage advance_time advance_weather"
+
+# key -> "<what to send> <kind> [allowed values]"
+setting_spec() {
+  case "$1" in
+    difficulty)       echo "difficulty enum peaceful easy normal hard" ;;
+    keep_inventory)   echo "keep_inventory bool" ;;
+    sleep)            echo "players_sleeping_percentage enum 1 50 100" ;;
+    spawn_monsters)   echo "spawn_monsters bool" ;;
+    spawn_phantoms)   echo "spawn_phantoms bool" ;;
+    mob_griefing)     echo "mob_griefing bool" ;;
+    fall_damage)      echo "fall_damage bool" ;;
+    advance_time)     echo "advance_time bool" ;;
+    advance_weather)  echo "advance_weather bool" ;;
+    *) return 1 ;;
+  esac
+}
+
+valid_setting() {
+  local key=$1 value=$2 spec kind allowed v
+  spec=$(setting_spec "$key") || return 1
+  kind=$(echo "$spec" | cut -d' ' -f2)
+  case "$kind" in
+    bool) [ "$value" = "true" ] || [ "$value" = "false" ] ;;
+    enum)
+      allowed=$(echo "$spec" | cut -d' ' -f3-)
+      for v in $allowed; do [ "$v" = "$value" ] && return 0; done
+      return 1 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Read what the server is actually doing right now. The stored file is our
+# intent; this is the truth, and they can differ (someone with a console, or a
+# world regenerated before settings-apply ran). The panel shows the truth.
+read_setting() {
+  local key=$1 spec rule
+  spec=$(setting_spec "$key") || return 1
+  rule=$(echo "$spec" | cut -d' ' -f1)
+  if [ "$key" = "difficulty" ]; then
+    rcon "difficulty" 2>/dev/null | grep -oE '[A-Za-z]+$' | tr '[:upper:]' '[:lower:]'
+    return 0
+  fi
+  rcon "execute in minecraft:overworld run gamerule $rule" 2>/dev/null \
+    | grep -oE '[A-Za-z0-9]+$'
+}
+
+apply_setting() {
+  local key=$1 value=$2 spec rule dim
+  spec=$(setting_spec "$key") || return 1
+  rule=$(echo "$spec" | cut -d' ' -f1)
+
+  if [ "$key" = "difficulty" ]; then
+    # Two writes, because they cover two different moments. RCON changes the
+    # running server now; MC_DIFFICULTY in .env is what the container is built
+    # from next time. itzg rewrites server.properties from its environment on
+    # every start, so without the .env write this reverts at the next restart
+    # and looks like the panel did nothing.
+    for dim in $DIMENSIONS; do rcon "execute in minecraft:$dim run difficulty $value" >/dev/null 2>&1; done
+    touch "$STACK/.env"
+    sed -i '/^MC_DIFFICULTY=/d' "$STACK/.env"
+    echo "MC_DIFFICULTY=$value" >> "$STACK/.env"
+    return 0
+  fi
+
+  for dim in $DIMENSIONS; do
+    rcon "execute in minecraft:$dim run gamerule $rule $value" >/dev/null 2>&1
+  done
+
+  # Freezing the clock or the weather leaves whatever is happening right now
+  # frozen with it. Turning the cycle off at midnight in a thunderstorm is not
+  # what anyone means by "stop the day changing", so land somewhere pleasant.
+  if [ "$key" = "advance_time" ] && [ "$value" = "false" ]; then
+    for dim in $DIMENSIONS; do rcon "execute in minecraft:$dim run time set day" >/dev/null 2>&1; done
+  fi
+  if [ "$key" = "advance_weather" ] && [ "$value" = "false" ]; then
+    rcon "weather clear" >/dev/null 2>&1
+  fi
+}
+
+store_setting() {
+  local key=$1 value=$2
+  mkdir -p "$(dirname "$SETTINGS")"
+  touch "$SETTINGS"
+  sed -i "/^${key}=/d" "$SETTINGS"
+  echo "${key}=${value}" >> "$SETTINGS"
+}
+
+verb_settings_get() {
+  local key value first=1
+  echo -n '{"running":'
+  if running; then echo -n 'true'; else echo -n 'false'; fi
+  echo -n ',"settings":{'
+  for key in $SETTING_KEYS; do
+    if running; then
+      value=$(read_setting "$key")
+    else
+      value=$(grep "^${key}=" "$SETTINGS" 2>/dev/null | tail -1 | cut -d= -f2-)
+    fi
+    [ -n "$value" ] || continue
+    [ $first -eq 1 ] || echo -n ','
+    first=0
+    echo -n "$(jstr "$key"):$(jstr "$value")"
+  done
+  echo '}}'
+}
+
+verb_settings_set() {
+  # Not ${1:?key}: that idiom aborts with a raw bash diagnostic quoting a line
+  # number, which the agent then hands to a child as an error message. Every
+  # refusal a person can trigger should read like a sentence.
+  local key=${1:-} value=${2:-}
+  [ -n "$key" ] || die "no setting named"
+  [ -n "$value" ] || die "no value given for $key"
+  setting_spec "$key" >/dev/null || die "unknown setting: $key"
+  valid_setting "$key" "$value" || die "invalid value for $key: $value"
+  running || die "the server is not running"
+  apply_setting "$key" "$value" || die "could not apply $key"
+  store_setting "$key" "$value"
+  audit "settings.set $key=$value"
+  echo "{\"ok\":true,\"key\":$(jstr "$key"),\"value\":$(jstr "$value")}"
+}
+
+# Push every stored setting back onto the server. Gamerules live inside the
+# world, so a regenerated world comes back at vanilla defaults and quietly
+# undoes everything the panel was told to do; difficulty comes back from the
+# container environment, which a plain `compose restart` does not refresh.
+# Both holes are closed by calling this after the event.
+verb_settings_apply() {
+  local key value applied=0
+  [ -r "$SETTINGS" ] || { echo "no stored settings — nothing to apply"; return 0; }
+  running || die "the server is not running"
+  for key in $SETTING_KEYS; do
+    value=$(grep "^${key}=" "$SETTINGS" 2>/dev/null | tail -1 | cut -d= -f2-)
+    [ -n "$value" ] || continue
+    valid_setting "$key" "$value" || { echo "skipping unreadable stored setting: $key"; continue; }
+    apply_setting "$key" "$value" && applied=$((applied+1))
+  done
+  audit "settings.apply ($applied setting(s))"
+  echo "applied $applied setting(s)"
+}
+
 verb_server_restart() {
   audit "server.restart"
   /usr/local/sbin/marnar-mc-restart
@@ -476,6 +651,9 @@ case "${1:-}" in
   world-regenerate)  shift; verb_world_regenerate "$@" ;;
   world-import)      shift; verb_world_import "$@" ;;
   world-restore)     shift; verb_world_restore "$@" ;;
+  settings-get)      verb_settings_get ;;
+  settings-set)      shift; verb_settings_set "$@" ;;
+  settings-apply)    verb_settings_apply ;;
   server-restart)    verb_server_restart ;;
   logs)              shift; verb_logs "$@" ;;
   *) die "unknown verb: ${1:-<none>}" ;;

@@ -367,6 +367,82 @@
   };
 
   // ---- world -------------------------------------------------------------
+  // ---- play settings -----------------------------------------------------
+  //
+  // The panel shows what the SERVER says, not what we last sent. adminctl reads
+  // each value back over RCON, so a setting changed from a console elsewhere
+  // shows up here rather than being quietly overwritten by a stale form.
+  //
+  // The key and the permitted values below must match adminctl's allow-list.
+  // This list is a convenience for rendering, never an authority: adminctl
+  // rejects anything it does not recognise, so a tampered page gets a 400 and
+  // not a surprise gamerule.
+  var SETTINGS = [
+    { key: "difficulty",      values: ["peaceful", "easy", "normal", "hard"] },
+    { key: "keep_inventory",  values: ["true", "false"] },
+    { key: "sleep",           values: ["1", "50", "100"] },
+    { key: "spawn_monsters",  values: ["true", "false"] },
+    { key: "spawn_phantoms",  values: ["true", "false"] },
+    { key: "mob_griefing",    values: ["true", "false"] },
+    { key: "fall_damage",     values: ["true", "false"] },
+    { key: "advance_time",    values: ["true", "false"] },
+    { key: "advance_weather", values: ["true", "false"] }
+  ];
+
+  function settingRow(def, current) {
+    var sel = el("select", {});
+    def.values.forEach(function (v) {
+      var opt = el("option", { text: t("set." + def.key + "." + v) });
+      opt.value = v;
+      if (v === current) opt.selected = true;
+      sel.appendChild(opt);
+    });
+
+    var row = el("div", { cls: "setting" }, [
+      el("div", { cls: "setting-text" }, [
+        el("span", { cls: "setting-name", text: t("set." + def.key + ".name") }),
+        el("span", { cls: "setting-note", text: t("set." + def.key + ".note") })
+      ]),
+      sel
+    ]);
+
+    sel.onchange = function () {
+      var chosen = sel.value;
+      // Lock the row while it is in flight. Without this a fast double-change
+      // sends two writes whose order is decided by the network, and the panel
+      // ends up showing the value that lost.
+      row.classList.add("is-busy");
+      sel.disabled = true;
+      api("/settings", { method: "POST", json: { key: def.key, value: chosen } })
+        .then(function () {
+          toast(t("settings.saved", { what: t("set." + def.key + ".name") }));
+          return loadSettings();
+        })
+        .catch(function (err) {
+          fail(err);
+          return loadSettings();   // put the control back to the truth
+        });
+    };
+    return row;
+  }
+
+  function loadSettings() {
+    return api("/settings").then(function (data) {
+      var box = $("#settings-list");
+      var values = data.settings || {};
+      box.textContent = "";
+      if (!data.running) {
+        box.appendChild(el("div", { cls: "empty", text: t("settings.offline") }));
+        return;
+      }
+      SETTINGS.forEach(function (def) {
+        var current = values[def.key];
+        if (current === undefined) return;   // server does not know this rule
+        box.appendChild(settingRow(def, String(current)));
+      });
+    });
+  }
+
   function loadWorld() {
     return api("/world").then(function (w) {
       $("#w-seed").textContent = w.seed || "–";
@@ -519,6 +595,7 @@
     });
     if (view === "players") loadPlayers().catch(fail);
     if (view === "world") { loadWorld().catch(fail); loadBackups().catch(fail); }
+    if (view === "settings") loadSettings().catch(fail);
     if (view === "activity") { loadAudit().catch(fail); loadLogs().catch(fail); }
   }
 

@@ -480,6 +480,107 @@ rather than passing silently. If you see that line, remove it by hand as above.
 
 ---
 
+## 3e. Play settings — "How we play" (F-12)
+
+Nine settings MarNar can change himself, in the panel's own section: difficulty,
+keep items on death, how many must sleep, monsters, phantoms, mob griefing,
+fall damage, the day/night cycle and the weather cycle. All of them apply
+instantly and none of them touch the world. Nothing here needs a restart, and
+nothing here needs a new world.
+
+From a shell:
+
+```bash
+sudo /usr/local/sbin/marnar-mc-adminctl settings-get
+sudo /usr/local/sbin/marnar-mc-adminctl settings-set difficulty easy
+sudo /usr/local/sbin/marnar-mc-adminctl settings-apply     # push stored intent back
+```
+
+`settings-get` reads the **live server**, not the stored file, so it tells you
+what is actually happening rather than what was last requested.
+
+### ⚠️ 26.2 renamed every gamerule, and made them per-dimension
+
+Two changes landed together in MC 26.2 and either one alone will waste an
+afternoon.
+
+**They are snake_case now.** `keepInventory` is `keep_inventory`,
+`naturalRegeneration` is `natural_health_regeneration`, `doInsomnia` is
+`spawn_phantoms`, `doDaylightCycle` is `advance_time`, and `doFireTick` became
+the *numeric* `fire_spread_radius_around_player`. Old names are not aliased —
+they are rejected with `Incorrect argument for command`, which reads exactly
+like a syntax error and sends you looking in the wrong place. The authoritative
+list is in the server jar at
+`net/minecraft/world/level/gamerules/GameRules.class`; there are 58 of them.
+
+**They are per-dimension.** Each dimension has its own
+`world/dimensions/minecraft/<dim>/data/minecraft/game_rules.dat`, and the RCON
+console runs in the overworld. So this:
+
+```bash
+docker exec minecraft rcon-cli "gamerule keep_inventory true"
+```
+
+changes the overworld **and nothing else**, while reporting success. That is
+not hypothetical: it is how this world spent its whole life keeping your items
+at home and eating them in the Nether, with F-1b claiming otherwise. Write all
+three, always:
+
+```bash
+for dim in overworld the_nether the_end; do
+  docker exec minecraft rcon-cli "execute in minecraft:$dim run gamerule keep_inventory true"
+done
+```
+
+Reading has the same trap. A bare `gamerule keep_inventory` reports the
+overworld's value and tells you nothing about the other two. `settings-set`
+handles all of this; the warning is for when you are doing it by hand.
+
+### Difficulty is stored in two places, deliberately
+
+Difficulty is not a gamerule — it comes from `server.properties`, and itzg
+rewrites that file from the container environment on **every** start. So a
+difficulty set over RCON alone survives exactly until the next restart and then
+silently reverts, which looks like the panel not working.
+
+`settings-set difficulty` therefore writes twice: over RCON for the running
+server, and `MC_DIFFICULTY` into `/home/mcadmin/stacks/minecraft/.env` for the next
+container build. Two consequences worth knowing:
+
+- Changing it in `docker-compose.yml` is wrong; change `.env`.
+- `docker compose restart` **reuses the container's existing environment**, so
+  it does not pick up an `.env` change. Only `docker compose up -d` recreates.
+  Because the weekly bounce uses `restart`, `marnar-mc-restart` finishes by
+  calling `settings-apply`, which pushes the stored values back over RCON. If
+  you ever see difficulty revert after a restart, that hook is what failed —
+  check the restart log for `re-applying stored play settings`.
+
+### Stored intent vs. what the server is doing
+
+`/etc/marnar/mc-settings.env` holds what we asked for. The server holds what is
+true. They diverge in two situations, and both are handled:
+
+- **After a world regenerate** — a new world starts at vanilla defaults and
+  throws every setting away. `verb_world_regenerate` calls `settings-apply`
+  before it reports success.
+- **After a container restart** — difficulty comes back stale, as above.
+
+If you need to force them back into agreement at any time, run
+`settings-apply`. It is safe to run repeatedly.
+
+### Adding a new setting
+
+Add the key to `SETTING_KEYS` and `setting_spec()` in `marnar-mc-adminctl`, add
+the same key to `SETTINGS` in `admin/ui/html/app.js`, and add
+`set.<key>.name`, `set.<key>.note` and one string per value to **both**
+languages in `i18n.js`. adminctl is the authority: a key the browser sends that
+is not in `setting_spec()` is refused with a 400, and the rule name sent to the
+server always comes from adminctl, never from the request. Keep it that way —
+RCON is command execution, and this is the only thing standing between the
+browser and it.
+
+---
+
 ## 4. Minecraft updated and Bedrock players can't join (O-2)
 
 **This is expected and recurring, not an incident.** When Mojang ships a Bedrock

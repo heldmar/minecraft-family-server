@@ -34,3 +34,20 @@ sleep 5
 log "restarting container"
 cd /home/mcadmin/stacks/minecraft && docker compose restart minecraft
 log "restart issued"
+
+# `compose restart` reuses the container's existing environment, so a difficulty
+# set from the panel since the container was created is not in it — the
+# entrypoint rewrites server.properties from the stale value and the setting
+# silently reverts. Gamerules survive (they live in the world), difficulty does
+# not. Push the stored settings back once RCON answers again.
+log "waiting for the server to accept commands"
+for _ in $(seq 1 60); do
+  docker exec minecraft rcon-cli list >/dev/null 2>&1 && break
+  sleep 5
+done
+if docker exec minecraft rcon-cli list >/dev/null 2>&1; then
+  log "re-applying stored play settings"
+  /usr/local/sbin/marnar-mc-adminctl settings-apply || log "WARNING: settings-apply failed"
+else
+  log "WARNING: server did not answer RCON; play settings NOT re-applied"
+fi
