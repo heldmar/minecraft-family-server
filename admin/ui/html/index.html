@@ -198,7 +198,12 @@
       </div>
     </div>
 
-    <div class="split">
+    <!-- Two rows, not two columns. The backup list is tall and the two forms
+         are short, so a plain 50/50 split left a screen-height hole under the
+         list. "Start a new world" now runs the full width on its own row,
+         which also reads as the separation it is: the two things above keep a
+         world, the thing below replaces it. -->
+    <div class="world-grid">
       <div class="card">
         <div class="card-head">
           <h2 data-i18n="world.backupsTitle"></h2>
@@ -207,8 +212,10 @@
 
         <!-- C-4: the panel must never imply backups happen on their own. -->
         <div class="notice" data-i18n="world.notAuto"></div>
-        <p class="muted sm" id="backup-disk"></p>
-        <details class="help"><summary data-i18n="help.open"></summary><p data-i18n="help.disk"></p></details>
+        <div class="meta-row">
+          <p class="muted sm" id="backup-disk"></p>
+          <details class="help"><summary data-i18n="help.open"></summary><p data-i18n="help.disk"></p></details>
+        </div>
 
         <div class="table-wrap tall">
           <table id="backups-table">
@@ -223,53 +230,67 @@
         </div>
       </div>
 
-      <div class="stack">
-        <div class="card">
-          <div class="card-head"><h2 data-i18n="world.importTitle"></h2></div>
-          <details class="help"><summary data-i18n="help.open"></summary><p data-i18n="help.import"></p></details>
-          <form id="import-form" class="form">
-            <label><span data-i18n="world.importFile"></span>
-              <input type="file" name="file" accept=".zip,.tar.gz,.tgz,.tar.zst" required>
-            </label>
-            <div class="hint" data-i18n="world.importHint"></div>
-            <div class="progress is-hidden" id="upload-progress"><div></div></div>
+      <div class="card">
+        <div class="card-head"><h2 data-i18n="world.importTitle"></h2></div>
+        <details class="help"><summary data-i18n="help.open"></summary><p data-i18n="help.import"></p></details>
+        <form id="import-form" class="form">
+          <div class="field">
+            <label for="import-file"><span data-i18n="world.importFile"></span></label>
+            <input id="import-file" type="file" name="file" accept=".zip,.tar.gz,.tgz,.tar.zst" required>
+          </div>
+          <div class="hint" data-i18n="world.importHint"></div>
+          <div class="progress is-hidden" id="upload-progress"><div></div></div>
+          <div class="form-actions">
             <button class="btn btn-primary" type="submit" data-i18n="world.importSubmit"></button>
-          </form>
-        </div>
+          </div>
+        </form>
+      </div>
 
-        <div class="card card-danger">
-          <div class="card-head"><h2 data-i18n="world.regenTitle"></h2></div>
-          <details class="help"><summary data-i18n="help.open"></summary><p data-i18n="help.regen"></p></details>
-          <form id="regen-form" class="form">
-            <label>
-              <span data-i18n="world.regenSeed"></span>
-              <span class="muted" data-i18n="world.regenSeedOpt"></span>
-              <input name="seed" inputmode="numeric" autocomplete="off" data-i18n-ph="world.regenSeedPh">
-            </label>
-            <label><span data-i18n="world.regenSize"></span>
+      <div class="card card-danger world-wide">
+        <div class="card-head"><h2 data-i18n="world.regenTitle"></h2></div>
+        <details class="help"><summary data-i18n="help.open"></summary><p data-i18n="help.regen"></p></details>
+        <form id="regen-form" class="form">
+          <!-- Each field owns its own "what is this?", inside the same block as
+               the control it explains. Loose in the form they read as belonging
+               to whatever came next, which is how the world-type help ended up
+               looking like it described the structures dropdown. -->
+          <div class="form-grid">
+            <div class="field">
+              <label for="regen-seed">
+                <span data-i18n="world.regenSeed"></span>
+                <span class="muted" data-i18n="world.regenSeedOpt"></span>
+              </label>
+              <input id="regen-seed" name="seed" inputmode="numeric" autocomplete="off" data-i18n-ph="world.regenSeedPh">
+            </div>
+            <div class="field">
+              <label for="regen-size"><span data-i18n="world.regenSize"></span></label>
               <!-- 4500, not adminctl's 20000: pre-generation scales with area,
                    and the shell keeps the full range for an operator. -->
-              <input name="size" type="number" min="500" max="4500" step="100" value="3000">
-            </label>
-            <label><span data-i18n="world.regenType"></span>
-              <select name="level_type">
+              <input id="regen-size" name="size" type="number" min="500" max="4500" step="100" value="3000">
+            </div>
+            <div class="field">
+              <label for="regen-type"><span data-i18n="world.regenType"></span></label>
+              <select id="regen-type" name="level_type">
                 <option value="normal" data-i18n="world.typeNormal"></option>
                 <option value="flat" data-i18n="world.typeFlat"></option>
                 <option value="large_biomes" data-i18n="world.typeLarge"></option>
               </select>
-            </label>
-            <details class="help"><summary data-i18n="help.open"></summary><p data-i18n="help.worldType"></p></details>
-            <label><span data-i18n="world.regenStructures"></span>
-              <select name="structures">
+              <details class="help"><summary data-i18n="help.open"></summary><p data-i18n="help.worldType"></p></details>
+            </div>
+            <div class="field">
+              <label for="regen-structures"><span data-i18n="world.regenStructures"></span></label>
+              <select id="regen-structures" name="structures">
                 <option value="true" data-i18n="world.structuresYes"></option>
                 <option value="false" data-i18n="world.structuresNo"></option>
               </select>
-            </label>
-            <details class="help"><summary data-i18n="help.open"></summary><p data-i18n="help.structures"></p></details>
-            <div class="hint hint-danger" data-i18n="world.regenHint"></div>
+              <details class="help"><summary data-i18n="help.open"></summary><p data-i18n="help.structures"></p></details>
+            </div>
+          </div>
+          <div class="hint hint-danger" data-i18n="world.regenHint"></div>
+          <div class="form-actions">
             <button class="btn btn-danger" type="submit" data-i18n="world.regenSubmit"></button>
-          </form>
-        </div>
+          </div>
+        </form>
       </div>
     </div>
   </section>

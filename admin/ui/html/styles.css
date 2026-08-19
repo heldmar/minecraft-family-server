@@ -169,6 +169,9 @@ code { font-family: var(--mono); background: #EDF2E6; padding: 1px 5px; border-r
   gap: 12px; margin-bottom: 14px;
 }
 .card-danger { border-color: #F0CFCF; background: #FFF8F8; }
+/* Help that explains the whole card belongs to the heading, not to the first
+   field of the form below it. */
+.card-head + .help { margin-top: -6px; margin-bottom: 14px; }
 
 .stat { position: relative; padding-top: 22px; overflow: hidden; }
 /* the coloured strip is the "block face" on top of each card */
@@ -187,8 +190,23 @@ code { font-family: var(--mono); background: #EDF2E6; padding: 1px 5px; border-r
 
 .split { display: grid; grid-template-columns: 1.45fr 1fr; gap: 18px; align-items: start; }
 .stack { display: flex; flex-direction: column; gap: 18px; }
+
+/* World view. Same two columns as .split for the row that holds the backup
+   list and the upload form, plus a full-width row underneath. The list is
+   several hundred pixels taller than either form, so anything that puts all
+   three side by side leaves a hole the height of the screen. */
+.world-grid { display: grid; grid-template-columns: 1.45fr 1fr; gap: 18px; align-items: start; }
+.world-grid > .world-wide { grid-column: 1 / -1; }
+
+/* A line of small print with its own help toggle beside it, rather than the
+   two stacked on separate lines. */
+.meta-row { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; margin: 8px 0 4px; }
+.meta-row > .muted { margin: 0; }
+.meta-row > .help { margin: 0; }
+
 @media (max-width: 1000px) {
   .split { grid-template-columns: 1fr; }
+  .world-grid { grid-template-columns: 1fr; }
   .sidebar { display: none; }
 }
 
@@ -217,7 +235,24 @@ tbody tr:hover td { background: #F7FAF3; }
 .badge-warn    { background: #FDF0D3; color: #8A6400; }
 
 /* ---------- forms & buttons ---------- */
-.form { display: flex; flex-direction: column; gap: 13px; }
+.form { display: flex; flex-direction: column; gap: 15px; }
+
+/* One field = its label, its control, and the help that explains that control,
+   in one block. A <details> loose between two labels reads as an introduction
+   to the next one. */
+.field { display: flex; flex-direction: column; gap: 5px; }
+.field > label { flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.field > label .muted { margin: 0; font-size: 12px; font-weight: 500; }
+.field > .help { margin-top: 3px; }
+
+/* Wide cards get their fields side by side instead of one tall column. */
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px 18px; align-items: start; }
+
+/* Submit buttons stop short of the full width of a wide card — a metre of red
+   across the screen is not more clickable, only louder. */
+.form-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.form-actions .btn { min-width: 230px; }
+@media (max-width: 560px) { .form-actions .btn { width: 100%; min-width: 0; } }
 label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 600; color: var(--ink-soft); }
 input, select {
   font: inherit; font-size: 14px; color: var(--ink);
