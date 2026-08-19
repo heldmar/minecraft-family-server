@@ -31,3 +31,8 @@ stacks/*/data/
 # Python bytecode from local syntax checks
 __pycache__/
 *.pyc
+
+# Personal, deployment-specific material — never published. Anything in here is
+# for this operator's copy only: cross-project notes, real hostnames, the AWS
+# key CSV. The repository itself stays generic so it can be handed to anyone.
+private/
