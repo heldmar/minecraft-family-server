@@ -781,17 +781,17 @@ dated keys under `copies/` instead of sharing one name: with a shared name, ever
 copy but the newest would be invisible — including the one somebody took right
 before trying something risky, which is the whole reason they took it.
 
-⚠️ **`copies/` has no lifecycle rule yet, and the box cannot prune it** (no
-`DeleteObject`, on purpose — see below). Until a rule is added **in the AWS
-console**, every copy anyone makes stays for ever, at ~295 MB and ~$0.007/month
-each. Expiring `copies/` by **age** is safe, unlike `world.tar.zst`: the weekly
-key is always there underneath, so a quiet spell can never leave the world
-unprotected.
+⚠️ **The box cannot prune `copies/`** (no `DeleteObject`, on purpose — see
+below), so a lifecycle rule is the only thing standing between this prefix and
+copies accumulating for ever at ~295 MB each. Expiring `copies/` by **age** is
+safe, unlike `world.tar.zst`: the weekly key is always there underneath, so a
+quiet spell can never leave the world unprotected. See "Retention" below for the
+rule and the trap that goes with it.
 
 ⚠️ `copies/probe.txt` (5 bytes) is mine — written 2026-08-19 while checking that
 the key could write under that prefix, and **it cannot be deleted from the box**.
-It is filtered out of the panel's restore list by name. Delete it in the console
-when you are next there.
+It is filtered out of the panel's restore list by name, and the `copies/` lifecycle
+rule below expires it seven days after it was written, so it needs no console visit.
 
 ### It is supposed to skip, most weeks
 
@@ -826,13 +826,11 @@ rewrites `chunk_tickets.dat`, `raids.dat` and `level_overrides.dat` on every
 autosave whether or not anyone is online, so the tree always looks freshly modified
 and nothing would ever be skipped.
 
-### Retention is by version, and the reason matters
+### Retention: two rules, and they must not overlap
 
-The bucket is **versioned**, every upload overwrites the single key
-`world.tar.zst`, and the lifecycle rule expires only **non-current** versions
-(7 days, keeping 1 newer). The current version never expires.
-
-Versioning is **verified**, not assumed: a `HEAD` on the object returns an
+The bucket is **versioned** (verified in the console 2026-08-19, MFA delete off —
+which is fine, since the box's key cannot delete at all). Versioning is also
+verified from the box, not assumed: a `HEAD` on the object returns an
 `X-Amz-Version-Id` header, which a non-versioned bucket does not send.
 
 ```bash
@@ -840,15 +838,46 @@ ssh mcserver 'sudo bash -c "set -a; . /etc/marnar/mc-offsite.env; set +a
   rclone lsjson \$S3_BASE/world.tar.zst --dump headers"' 2>&1 | grep -i version-id
 ```
 
-The lifecycle rule itself **cannot be checked from the box** — the scoped key has no
-`s3:GetLifecycleConfiguration`, deliberately. Helder confirmed on 2026-08-19 that he
-created it as specified; if you need to see it, that is an AWS console job. The
-missing-copy guard above is what protects the world if it was ever set up wrong.
+| Rule | Filter | Actions |
+|---|---|---|
+| `keep-two-world-copies` | prefix **`world.tar.zst`** | *No* current-version action. Non-current: after **7 days**, retain the 1 newest and permanently delete the rest |
+| `expire-panel-copies` | prefix **`copies/`** | Expire **current** versions **7 days** after creation. Permanently delete non-current versions **1 day** after they become non-current, retaining **none** |
 
-⚠️ **Never change this to "expire objects after N days."** Combined with the skip
+The first keeps two generations of the weekly copy — current plus one previous —
+and the current version never expires however long the server sits quiet. The
+second is what stops "Make a copy" filling the bucket for ever.
+
+⚠️ **Never give `world.tar.zst` an age-based expiry.** Combined with the skip
 logic above, an age rule deletes the last copy during a quiet spell while the skip
 logic quite correctly declines to upload a replacement — leaving nothing off-site
-precisely because nothing changed.
+precisely because nothing changed. Age is only safe on `copies/`, and only because
+`world.tar.zst` is always there underneath.
+
+⚠️ **The two rules must not both match the same object.** `keep-two-world-copies`
+was originally created with scope *"Entire bucket"*, which also governed `copies/`
+— and its `NewerNoncurrentVersions: 1` would have retained the 1 newest non-current
+version of an expired copy **for ever**, so the data would never actually leave the
+bucket, merely stop being listed. AWS documents that overlapping *expirations*
+resolve in favour of the shorter one, but says **nothing** about how two different
+`NewerNoncurrentVersions` counts merge. So the fix is to remove the overlap rather
+than to bet on undocumented behaviour: `keep-two-world-copies` is scoped to the
+prefix `world.tar.zst`, which matches that one key and nothing else.
+
+⚠️ **A non-current rule can never prune `copies/` on its own.** Each copy is a
+unique key with one current version and zero non-current versions, and per AWS:
+*"The `NoncurrentVersionExpiration` action doesn't apply to the current object
+versions."* The copies rule therefore needs a **current-version** expiry, which is
+the part that is easy to leave out.
+
+Delete markers need no third rule: with `Days` set, S3 cleans up expired object
+delete markers itself once they are old enough. Do **not** try to add
+`ExpiredObjectDeleteMarker` to the copies rule — AWS rejects it in the same rule as
+a `Days` expiry.
+
+**Neither rule can be checked from the box** — the scoped key has no
+`s3:GetLifecycleConfiguration`, deliberately. Verification is a console job, and
+what is written above came from console screenshots on 2026-08-19. The missing-copy
+guard further up is what protects the world if a rule was ever set up wrong.
 
 ### The box cannot delete its own backups
 
