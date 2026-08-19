@@ -875,9 +875,19 @@ delete markers itself once they are old enough. Do **not** try to add
 a `Days` expiry.
 
 **Neither rule can be checked from the box** — the scoped key has no
-`s3:GetLifecycleConfiguration`, deliberately. Verification is a console job, and
-what is written above came from console screenshots on 2026-08-19. The missing-copy
-guard further up is what protects the world if a rule was ever set up wrong.
+`s3:GetLifecycleConfiguration`, deliberately. Verification is a console job. Both
+rules were verified there on **2026-08-19**, in the detail view rather than the
+list: the list view shows only "Filtered" and "Expires", which looks identical
+whatever the prefix and day counts actually are. All four load-bearing values were
+read directly — prefix `world.tar.zst` / no current-version action / Day 7 retaining
+1 newest, and prefix `copies/` / Day 7 expire / Day 1 retaining **0** newest. The
+missing-copy guard further up is what protects the world if a rule is ever changed
+to something wrong.
+
+⚠️ **Re-verify by screenshot after any edit to either rule.** Nothing on this box
+or in this repo can detect a lifecycle rule that has drifted, and the symptom of a
+wrong one is silence — either a bill that grows or a copy that is not there on the
+day it is wanted.
 
 ### The box cannot delete its own backups
 
