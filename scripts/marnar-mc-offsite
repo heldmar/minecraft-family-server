@@ -39,7 +39,7 @@
 # declines to upload a new one, leaving nothing off-site exactly when nothing has
 # changed. So the bucket is versioned, every upload overwrites ONE key, and the
 # lifecycle rule only trims non-current versions. The current version never expires,
-# however long the server sits quiet. See docs/RUNBOOK.md §6b for the rule and the
+# however long the server sits quiet. See docs/RUNBOOK.md §5b for the rule and the
 # IAM policy.
 #
 # ── Cost ─────────────────────────────────────────────────────────────────────
@@ -47,7 +47,7 @@
 # The archive is ~300 MB. In S3 Standard that is about $0.007/month per copy, and the
 # lifecycle rule keeps two (current + one previous), so roughly $0.014/month — call
 # it 17 cents a year. Uploads into S3 are free, and egress off the box is inside
-# its 10 TB/month allowance. See docs/RUNBOOK.md §6b for why S3 Standard is genuinely
+# its 10 TB/month allowance. See docs/RUNBOOK.md §5b for why S3 Standard is genuinely
 # the cheapest class at this size and the Glacier tiers would cost MORE.
 #
 # Config: /etc/marnar/mc-offsite.env    (rclone S3 creds + S3_BASE)  mode 600, root

@@ -438,6 +438,48 @@ Consequences worth knowing:
 
 ---
 
+## 3d. A removal that did not remove (fixed 2026-08-19)
+
+**Symptom:** the sync says `- .SomeName (not in roster)`, exits clean, and the
+player is still on `whitelist.json` afterwards — and can still join.
+
+**Cause:** `whitelist remove <name>` does **nothing** to a Bedrock player. Paper
+answers "That player does not exist" and leaves the entry in place. Only
+`fwhitelist remove <uuid>` works on a Floodgate account. Until 2026-08-19 the sync
+only used the UUID form for players listed in `roster/floodgate-uuids.tsv` — a file
+written solely by the by-UUID escape hatch in §3c, so in practice it held exactly
+one name. Every other removal was reported as done and silently did nothing.
+
+This was found by inspection, not by anyone noticing. A friend who was added and
+removed a minute later kept his access for three days, across four syncs that each
+claimed to have removed him.
+
+**The fix:** the UUID is taken from `whitelist.json` itself, which always has it,
+and the command is chosen by the UUID's shape — Floodgate mints its UUIDs in a
+reserved range beginning `00000000-0000-0000-000`, which a real Mojang account
+never matches. Java accounts keep the by-name form.
+
+**If you ever see this**, the manual removal is:
+
+```bash
+# find the UUID
+ssh mcserver 'docker exec minecraft cat /data/whitelist.json'
+# then, for a Bedrock player
+ssh mcserver 'docker exec minecraft rcon-cli "fwhitelist remove <uuid>"
+               docker exec minecraft rcon-cli "whitelist reload"'
+```
+
+Confirm with a dry run — `roster:` and `server:` must show the same count:
+
+```bash
+ssh mcserver 'sudo /usr/local/sbin/marnar-mc-sync-players --dry-run'
+```
+
+A name the sync cannot resolve to a UUID is now **reported and skipped loudly**
+rather than passing silently. If you see that line, remove it by hand as above.
+
+---
+
 ## 4. Minecraft updated and Bedrock players can't join (O-2)
 
 **This is expected and recurring, not an incident.** When Mojang ships a Bedrock
@@ -546,6 +588,93 @@ docker compose up -d
 
 Rename the broken world, do not delete it. If the restore turns out to be worse
 than what you replaced, that directory is the only way back.
+
+---
+
+## 5b. The off-site copy in S3 (O-4a)
+
+Everything in §5 lives on the same boot volume as the world it is protecting. This
+is the copy that survives losing that volume.
+
+```bash
+ssh mcserver 'systemctl list-timers marnar-mc-offsite.timer'   # armed? next run?
+ssh mcserver 'sudo /usr/local/sbin/marnar-mc-offsite --dry-run'  # safe, uploads nothing
+ssh mcserver 'sudo /usr/local/sbin/marnar-mc-offsite'            # run it now
+ssh mcserver 'sudo journalctl -u marnar-mc-offsite -n 40'        # what happened
+```
+
+Sundays at 04:07, offset from another weekly backup job (~03:30) so two uploads
+do not fight over the one vCPU. It calls `marnar-mc-backup` for the archive rather
+than making its own, so the `save-off` / `save-on` trap exists in exactly one place.
+
+### It is supposed to skip, most weeks
+
+```
+no play since the last off-site copy (2026-08-18 17:44) — skipping
+no archive built, no upload, no cost
+```
+
+**That is success, not a fault.** It compares the newest mtime under
+`world/players/` with the one recorded at the last upload, in
+`/var/lib/marnar/mc-offsite.state`. Nobody played, nothing changed, nothing to pay
+for. Use `--force` to upload anyway — which is what you want after a restore, since
+restoring an old world moves those timestamps *backwards* and the skip logic would
+otherwise consider the copy already made.
+
+⚠️ **Do not "fix" this to check the mtime of the world tree instead.** Paper
+rewrites `chunk_tickets.dat`, `raids.dat` and `level_overrides.dat` on every
+autosave whether or not anyone is online, so the tree always looks freshly modified
+and nothing would ever be skipped.
+
+### Retention is by version, and the reason matters
+
+The bucket is **versioned**, every upload overwrites the single key
+`world.tar.zst`, and the lifecycle rule expires only **non-current** versions
+(7 days, keeping 1 newer). The current version never expires.
+
+⚠️ **Never change this to "expire objects after N days."** Combined with the skip
+logic above, an age rule deletes the last copy during a quiet spell while the skip
+logic quite correctly declines to upload a replacement — leaving nothing off-site
+precisely because nothing changed.
+
+### The box cannot delete its own backups
+
+The IAM key (`minecraft-backup-writer`) has `PutObject`, `GetObject` and `ListBucket` on
+this bucket and nothing else. Verified 2026-08-19 against the live key: `AccessDenied`
+on `DeleteObject`, on `ListAllMyBuckets`, and on another bucket. So the script uses
+`rclone copyto` and never `sync` or `delete`, exactly as another backup job on the same box does.
+**Keep it that way** — retention belongs in the S3 lifecycle rule, because a box that
+can erase its own backup history is a box that loses it in the one event that matters.
+
+A consequence to remember: **you cannot delete anything in that bucket from here.**
+Do it in the AWS console.
+
+### ⚠️ The bucket holds secrets
+
+The archive includes `.rcon-cli.env`, `.paper.env` and `plugins/floodgate/key.pem`.
+O-4a allowed either stripping them or treating the bucket as secret-bearing, and the
+second was chosen: excluding `key.pem` would log every Bedrock player out on restore.
+
+So the bucket is private and must stay private. Verified 2026-08-19 — anonymous GET
+of the object and anonymous bucket listing both return **403**, objects are
+SSE-AES256, and RCON is not published beyond the container network (S-3). **Never
+make this bucket public, and never move these archives somewhere shared.**
+
+### Restoring from S3
+
+```bash
+ssh mcserver 'sudo bash -c "set -a; . /etc/marnar/mc-offsite.env; set +a
+  rclone copyto MCB:my-minecraft-backups/world.tar.zst /home/mcadmin/from-s3.tar.zst
+  zstd -t /home/mcadmin/from-s3.tar.zst"'
+```
+
+Then follow §7 as if it were a local archive. Verify with `zstd -t` **before**
+stopping the server — an archive that fails the test is not a rollback, and you
+still have the running world.
+
+Costs about $0.014/month for two copies. S3 Standard is the right class: Glacier's
+90- and 180-day minimum billing durations cost *more* for a 300 MB object that
+rotates weekly.
 
 ---
 

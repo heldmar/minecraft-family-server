@@ -34,8 +34,17 @@ services:
     # P-1: hard ceiling, leaving headroom on a 5.6 GB box already running nine
     # containers. P-3: the JVM must never swap; if it approaches this, that is
     # an incident, not something to absorb.
-    mem_limit: 2048m
-    mem_reservation: 1536m
+    #
+    # Raised 2026-08-19 with the player target (F-9, 4 -> 6). Measured before
+    # changing it: the JVM had 0 kB swapped and the cgroup 0 bytes, no OOM kills
+    # and no tick-lag warning has ever been logged, including through the real
+    # four-player session on 2026-08-15. What the cgroup did show was 609 `max`
+    # events — the limit being reached and memory reclaimed — which at 2048m is
+    # mostly page cache over the mmapped region files rather than heap distress.
+    # Benign now, but it means there is no slack to absorb two more players, so
+    # the ceiling goes up with them. +256 MiB against ~2.0 GiB then available.
+    mem_limit: 2304m
+    mem_reservation: 1792m
 
     # P-8/S-4: this box hosts live third-party sites on ONE shared vCPU.
     # Default weight is 1024; 512 means Minecraft yields to the other sites
@@ -69,7 +78,11 @@ services:
       VERSION: "26.2"
 
       # P-2: fixed heap (equal min/max, no resize pauses) + Aikar's G1GC flags.
-      MEMORY: "1536M"
+      # 1536M -> 1792M on 2026-08-19, with F-9 going 4 -> 6. Kept deliberately
+      # modest: view distance 6 and simulation distance 4 make each extra player
+      # cheap, and this box is shared. Raise it further only on evidence — a
+      # tick-lag warning in the log, or GC pauses — not on principle.
+      MEMORY: "1792M"
       USE_AIKAR_FLAGS: "true"
 
       # World seed. Empty means "let Minecraft pick", which is what happened on
@@ -86,8 +99,13 @@ services:
       VIEW_DISTANCE: "6"
       SIMULATION_DISTANCE: "4"
 
-      # F-9: four concurrent players.
-      MAX_PLAYERS: "4"
+      # F-9: six concurrent players. Was 4, itself cut from 8 when the host moved
+      # to the box's single vCPU. Raised 2026-08-19 by Helder after the
+      # 2026-08-15 session ran four players together for ~70 minutes with no
+      # tick lag logged at all (Q-11). The roster is meant to hold six, so the
+      # cap has to be six too, or the fifth and sixth to log on get "server
+      # full" — which is the same as not inviting them.
+      MAX_PLAYERS: "6"
 
       # A-1/A-1a/A-2: closed to everyone until gamertags are supplied.
       ENABLE_WHITELIST: "TRUE"

@@ -8,18 +8,26 @@ allowlist only.
 
 ## Status
 
-🟢 **Built, running, and played on.** MarNar joined and played from the iPad on
-2026-08-11 — the first real session. Friends have not been invited yet.
+🟢 **Built, running, and played on by MarNar and his friends.** The proving
+session was **2026-08-15**: four players together for about 70 minutes — MarNar on
+the iPad and three friends on PS5 — with **no tick lag logged at all**. Play has
+continued daily since. iPad and PS5 in the same world, which was the whole point.
 
 The server is live and reachable from the internet on all three paths (Java,
 Bedrock direct, and the console path). The nightly restart and the allowlist
 tooling are in place. World pre-generation is **finished** — all three
 dimensions reached 100% (overworld 39m46s, Nether 29s, End 5m39s).
 
-> ⚠️ **There is no backup of the world.** `/home/mcadmin/backups/minecraft/` is
-> empty: the scheduled timer is off by decision, and the archives were deleted
-> on 2026-08-11 before anyone had played. MarNar has played since. Press **Hacer
-> una copia** in the panel to create the first restore point.
+**Latency is settled (Q-11).** The only symptom anyone reports is a few seconds'
+lag when first connecting in a session, which clears on its own. On the strength
+of that the player target went **4 → 6** on 2026-08-19; two more friends can be
+added to the roster.
+
+✅ **The world is backed up, on and off the box.** Local archives in
+`/home/mcadmin/backups/minecraft/`, plus a weekly off-site copy to Amazon S3 that
+was proven by restoring it (`marnar-mc-offsite`, O-4a). It uploads only when
+somebody has actually played, so a quiet week costs nothing — about **$0.014 a
+month** all in. See [`docs/RUNBOOK.md`](docs/RUNBOOK.md) §5b.
 
 > ## ⚠️ The PS5 needs PlayStation Plus — the player's, not ours
 >
@@ -62,7 +70,7 @@ for the other parents)*
 - **Server:** PaperMC (Java Edition) + GeyserMC + Floodgate, in Docker
 - **Why not the official Bedrock server:** it is x86_64-only; the host is `aarch64`
 - **Players:** PS5, iPad and PC Bedrock via Geyser; PC Java Edition natively — one shared world
-- **Target:** 4 concurrent players (cut from 8 to fit a shared single vCPU)
+- **Target:** 6 concurrent players (was 4, itself cut from 8 to fit a shared single vCPU; raised 2026-08-19 on measured evidence — the 1 vCPU constraint is unchanged and 8 stays abandoned)
 - **PS5:** requires self-hosted BedrockConnect on port 53 — PS5 cannot type a server address
 
 ### How to connect, by platform
@@ -94,10 +102,18 @@ MarNar, who is 12. Every section carries an expandable *"¿Qué es esto?"* meant
 teach the concept, not label the button. See
 [`docs/REQUIREMENTS-ADMIN-R2.md`](docs/REQUIREMENTS-ADMIN-R2.md).
 
-> ⚠️ **Backups do not run on a schedule.** Since 2026-08-11 a copy is made only
-> when the button is pressed, and automatically just before anything destructive.
-> The timer is disabled on purpose — do not re-enable it without asking. Offsite
-> copies to S3 are decided but deferred (O-4a).
+> ⚠️ **Local backups do not run on a schedule.** Since 2026-08-11 a local copy is
+> made only when the button is pressed, and automatically just before anything
+> destructive. `marnar-mc-backup.timer` is disabled on purpose — do not re-enable
+> it without asking. **The one scheduled backup on the box is the weekly off-site
+> copy to S3** (O-4a, Sundays 04:07), which exists because an off-site copy nobody
+> remembers to press is not an off-site copy.
+
+> 🔒 **The S3 bucket is secret-bearing.** The archives contain `.rcon-cli.env` and
+> `plugins/floodgate/key.pem`, so `my-minecraft-backups` must stay private —
+> verified 2026-08-19 that anonymous reads and listings both return 403. The box's
+> IAM key can write to it but **cannot delete from it**, so a compromised server
+> cannot destroy the backups that would rescue it.
 
 > ⚠️ **This repository is load-bearing for disaster recovery.** The four stacks
 > live *here only* — they are deliberately not mirrored into another
@@ -138,7 +154,8 @@ stacks/
   mc-dns/              ← non-recursive DNS redirect      UDP/TCP 53
 scripts/
   marnar-mc-adminctl         ← the privileged verbs the admin panel may invoke
-  marnar-mc-backup           ← daily world backup (systemd timer, 04:00)
+  marnar-mc-backup           ← world backup, on demand (timer disabled, C-1)
+  marnar-mc-offsite          ← weekly off-site copy to S3 (systemd timer, Sun 04:07)
   marnar-mc-restart          ← nightly JVM bounce (systemd timer, 05:00)
   marnar-mc-restore-test     ← proves a backup boots, without touching the live world
   marnar-mc-sync-players     ← applies the on-server roster to the whitelist
