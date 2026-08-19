@@ -189,3 +189,7 @@ measurement, not by reading the router's UI. The diagnostic sequence that separa
 
 A small cloud VM with a static public IP avoids all of it, at the cost of latency to your
 players.
+
+## License
+
+[MIT](LICENSE) — use it, change it, host it. No warranty, and no support promised.
