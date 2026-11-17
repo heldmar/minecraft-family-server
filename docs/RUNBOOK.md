@@ -639,13 +639,59 @@ restart:
 
 ```bash
 ssh mcserver 'cd /home/mcadmin/stacks/minecraft && docker compose restart minecraft'
-ssh mcserver 'docker logs minecraft 2>&1 | grep -i "Started Geyser"'
+ssh mcserver 'docker logs minecraft 2>&1 | grep -iE "Loading Geyser version|Built-in signaling started|does not support the Java version"'
 ```
 
 If it still refuses, Geyser has not released support yet. Check
 <https://geysermc.org/> and wait. There is nothing to fix on our side, and
-**do not** change `VERSION` in the compose file to chase it — that changes the
-Java server version, which is a different thing and will not help.
+**do not** change `VERSION` in the compose file to chase a *Bedrock* update — that
+changes the Java server version, which is a different thing and will not help.
+
+### ⚠️ The exception: Geyser itself asks for a newer Java version
+
+Geyser updates itself on every start, and it moves to the newest *Java* version
+on its own schedule. When it does, the startup log says:
+
+> `Your server software does not support the Java version that Geyser requires (26.3). Please install ViaVersion … or update your server software!`
+
+That one **is** fixed by changing `VERSION`. It is a world upgrade and can't be
+undone, so take a copy, prove it with `marnar-mc-restore-test`, and keep that
+archive somewhere the daily/weekly pruning can't reach. Then bump `VERSION` and
+check the warning is gone. Found 2026-11-17: the warning had been logged at every
+start since 2026-10-15, and nobody saw it because nobody reads the startup log.
+
+### ⚠️ NetherNet: Bedrock needs TCP as well as UDP (since 2026-10-27)
+
+Bedrock 26.60 dropped RakNet. Clients now make an HTTP **signaling** request over
+**TCP** to the Bedrock port first, then play over WebRTC on the same port's UDP.
+Geyser removed RakNet-only mode on 2026-11-01 and rewrote its own `config.yml` to
+`transport: nethernet`. So both Bedrock ports must be open for **TCP and UDP** at
+every firewall layer, and published that way in compose:
+
+| Port | Who | TCP | UDP |
+|---|---|---|---|
+| 19133 | Geyser (phones, tablets, PC) | signaling | game (WebRTC) |
+| 19132 | BedrockConnect (consoles) | signaling | game (WebRTC) |
+
+Geyser's NetherNet settings live in `data/plugins/Geyser-Spigot/config.yml`, which
+is not in this repository: `bedrock.signaling.mode: builtin` and
+`advertise-addresses: ["<public IP>"]`. Without the advertise address, Geyser
+offers players the container's private IP plus whatever a third-party STUN
+server reports.
+
+Check from **outside** the box. An HTTP 404 means the signaling server answered;
+`000` means a firewall is still in the way:
+
+```bash
+curl -s -m6 -o /dev/null -w '%{http_code}\n' http://198.51.100.20:19133/
+curl -s -m6 -o /dev/null -w '%{http_code}\n' http://198.51.100.20:19132/
+```
+
+`scripts/raknetping.py` no longer reaches Geyser, which doesn't answer RakNet at
+all now. No reply there is expected and is **not** a failure.
+
+Players connecting by IP over plain-HTTP signaling see a one-time "trust on first
+use" prompt on their first join. That's expected.
 
 Tell the parents: *"Se actualizó Minecraft, hay que esperar a que se actualice
 el servidor. Los que juegan en la compu por Java pueden entrar igual."*

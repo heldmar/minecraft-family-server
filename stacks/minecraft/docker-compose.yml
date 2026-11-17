@@ -28,6 +28,11 @@ services:
       # the whole objective, so Geyser yields. Direct-connect Bedrock clients
       # (iPad, PC) therefore have to enter port 19133 explicitly.
       - "19133:19133/udp"              # N-5 Bedrock via Geyser
+      # NetherNet signaling (Geyser built-in), since 2026-11-17. Bedrock 26.60+
+      # clients reach the server over TCP first, then UDP. Geyser's config.yml
+      # (data/, not in this repo) sets transport: nethernet, signaling mode
+      # builtin, and advertise-addresses to the public IP.
+      - "19133:19133/tcp"
       # S-3: RCON (25575) is deliberately NOT published. It stays inside the
       # container network and is reached with `docker exec ... rcon-cli`.
 

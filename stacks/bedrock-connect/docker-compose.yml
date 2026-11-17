@@ -18,12 +18,13 @@
 services:
   bedrock-connect:
     # O-3: pinned by digest, arm64 manifest verified.
-    image: pugmatt/bedrock-connect@sha256:c3f1ba4df80c32df7f36236fda72df732ec293c206efe37c61c323f2f4d6e9f4
+    image: pugmatt/bedrock-connect@sha256:5a5d550c5558c0878672eb3962b82cd2450ddf01b61cfb1c47d323d410929907
     container_name: bedrock-connect
     restart: unless-stopped
 
     ports:
       - "19132:19132/udp"              # the console believes this is a featured server
+      - "19132:19132/tcp"              # NetherNet signaling (BedrockConnect 1.72+)
 
     mem_limit: 384m
     cpu_shares: 256                    # P-8: idle between joins; yields to everything else
@@ -55,5 +56,13 @@ services:
 
       BC_PACKET_LIMIT: "120"
       BC_KICK_INACTIVE: "true"
+
+      # NetherNet (BedrockConnect 1.72+, release 1.72.1 since 2026-11-17).
+      # Bedrock 26.60+ clients no longer speak RakNet: they first make an HTTP
+      # "signaling" request over TCP 19132, then play over WebRTC on UDP 19132.
+      # So TCP 19132 has to be open inbound at every firewall layer too.
+      # Advertise the public IP rather than rely on a STUN lookup.
+      BC_NET_MODE: "nethernet"
+      BC_ADVERTISE_ADDRESSES: "198.51.100.20"
 
       TZ: "Etc/UTC"

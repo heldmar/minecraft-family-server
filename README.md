@@ -144,8 +144,8 @@ admin/
   agent/               ← host agent (Python stdlib), systemd unit, sudoers
   install.sh           ← idempotent deploy
 stacks/
-  minecraft/           ← Paper + Geyser + Floodgate      TCP 25565, UDP 19133
-  bedrock-connect/     ← the menu consoles land in       UDP 19132
+  minecraft/           ← Paper + Geyser + Floodgate      TCP 25565, TCP+UDP 19133
+  bedrock-connect/     ← the menu consoles land in       TCP+UDP 19132
   mc-dns/              ← non-recursive DNS redirect      UDP/TCP 53
 scripts/
   marnar-mc-adminctl         ← the privileged verbs the admin panel may invoke
