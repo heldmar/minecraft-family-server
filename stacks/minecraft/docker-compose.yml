@@ -8,12 +8,12 @@
 services:
   minecraft:
     # O-3: pinned by digest, never :latest. This is the `java25` index digest; it
-    # resolves to arm64 manifest sha256:258e65f3831cdbaf0b2cd9af1b2aab87df99af59465d8543b12d4a7926fffac1
+    # resolves to arm64 manifest sha256:4e8240da0a0f542d70f0dc627fa10ff4b9f1b1e0fb42dd06f5463b863e2a2832
     #
     # ⚠️ The JRE tag is coupled to VERSION below: Minecraft 26.1 and newer refuse
     # to start on anything older than Java 25. `java21` fails at launch with a
     # one-line message and a restart loop. Bump both together, never one alone.
-    image: itzg/minecraft-server@sha256:23f417bcccfc5b96fad0c7898e1a9f6472a97d28450975a7c53a666722baeef3
+    image: itzg/minecraft-server@sha256:a2facf9a98e5743abf31dc81184e62fa6ab4433391737c82682c1c2e45f3adf4
     container_name: minecraft
     restart: unless-stopped            # O-6: always-on, survives host reboot
     stdin_open: true

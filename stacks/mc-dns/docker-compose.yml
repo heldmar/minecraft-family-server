@@ -4,8 +4,8 @@
 
 services:
   mc-dns:
-    # O-3: pinned by digest, arm64 manifest verified.
-    image: coredns/coredns@sha256:9b9128672209474da07c91439bf15ed704ae05ad918dd6454e5b6ae14e35fee6
+    # O-3: pinned by digest, arm64 manifest verified. CoreDNS 1.15.0 since 2026-11-17.
+    image: coredns/coredns@sha256:0a9d8c8ddf34347eb59aad9a8784f0710de88d6d112726d11d271f9bc6daca26
     container_name: mc-dns
     restart: unless-stopped
     command: ["-conf", "/config/Corefile"]
