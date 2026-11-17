@@ -49,9 +49,14 @@ From off the box, the two that actually prove reachability:
 # should print 198.51.100.20
 dig +short @198.51.100.20 hivebedrock.network
 
-# should print the server MOTD
-python3 scripts/raknetping.py
+# Bedrock (NetherNet signaling, TCP): each should print 404, never 000
+curl -s -m6 -o /dev/null -w '%{http_code}\n' http://198.51.100.20:19133/   # Geyser
+curl -s -m6 -o /dev/null -w '%{http_code}\n' http://198.51.100.20:19132/   # BedrockConnect
 ```
+
+`scripts/raknetping.py` used to be the second check here. Since NetherNet
+(2026-11) neither Bedrock port answers RakNet, so it gets no reply even when
+everything works. See §4.
 
 TPS below 18 sustained is the escalation trigger (P-7). One dip during chunk
 generation is not.
@@ -687,8 +692,9 @@ curl -s -m6 -o /dev/null -w '%{http_code}\n' http://198.51.100.20:19133/
 curl -s -m6 -o /dev/null -w '%{http_code}\n' http://198.51.100.20:19132/
 ```
 
-`scripts/raknetping.py` no longer reaches Geyser, which doesn't answer RakNet at
-all now. No reply there is expected and is **not** a failure.
+`scripts/raknetping.py` no longer gets a reply from Geyser or BedrockConnect,
+since neither answers RakNet now. No reply there is expected and is **not** a
+failure.
 
 Players connecting by IP over plain-HTTP signaling see a one-time "trust on first
 use" prompt on their first join. That's expected.
@@ -1090,7 +1096,46 @@ normal — check again before worrying.
 
 **Ports need opening in two places.** `firewalld` *and* the cloud firewall.
 Either one alone fails silently, and the failure looks identical to the service
-being down.
+being down. One refinement, reported by the host's operators on 2026-11-17: on
+the reference host, firewalld doesn't filter **Docker-published** ports, because
+that traffic goes FORWARD → `DOCKER-USER` and never reaches the zone. For
+container ports the **cloud security list** is the layer that actually blocks. It
+had UDP 19132/19133 but not TCP, and that was the whole NetherNet outage below.
+Keep firewalld matching anyway, so the two layers don't disagree.
+
+**Bedrock needs TCP too, since 2026-10-27 (NetherNet).** Bedrock 26.60 clients
+make an HTTP signaling request over TCP before playing over UDP, on the same
+port. TCP 19132/19133 had never been opened, so current Bedrock clients most
+likely couldn't join from about 2026-11-01 until 2026-11-17, and nobody noticed
+because nobody tried. Details and the outside-in check are in §4. A UDP-only port
+check is no longer evidence that Bedrock works.
+
+**`raknetping.py` gets no reply from either Bedrock port now, and that's
+normal.** Geyser and BedrockConnect 1.72.1 both run NetherNet only and don't
+answer RakNet pings (measured 2026-11-17). Check Bedrock with the TCP `curl` in
+§4, not with this script.
+
+**Self-updating plugins change behaviour without asking.** Geyser and Floodgate
+are pulled as `latest` on every start (`PLUGINS`), so a restart can bring a new
+transport, a rewritten `config.yml` or a new required Java version. Each time,
+the only notice was a warning in the startup log: "requires (26.3)" from
+2026-10-15, and "RakNet-only transport has now been REMOVED" on 2026-11-01. Both
+went unread for weeks. After any restart, and periodically anyway:
+
+```bash
+ssh mcserver 'docker logs --since 24h minecraft 2>&1 | grep -E "WARN|ERROR" | grep -v sun.misc.Unsafe'
+```
+
+**Recreating the container wipes `docker logs`.** `compose up -d` on a changed
+service starts a fresh log, so check history *before* a redeploy. Paper's own
+logs survive in `data/logs/*.log.gz`, one per start, and are how the dates above
+were recovered.
+
+**This repository is the generic copy, not the deployed one.** Hostnames, the
+IP, the timezone, the MOTD and the panel's names are placeholders here and real
+on the server. Never rsync or copy repo files onto the box. Edit the changed line
+in place (back the file up first), make the same change here, and `diff` live
+against repo before any deploy.
 
 **Java version is coupled to `VERSION`.** Minecraft 26.1+ refuses to start on
 anything below Java 25. The image is pinned to the `java25` digest. Bump both
