@@ -75,7 +75,13 @@ services:
       # F-1e: latest Minecraft version fully supported by Geyser. Bedrock clients
       # are force-updated by Mojang and cannot stay behind, so trailing the client
       # breaks joins outright. Verified 2026-08-10: Geyser 2.11.1 lists 26.2.
-      VERSION: "26.2"
+      #
+      # 26.2 -> 26.3 on 2026-11-17. Geyser had logged "Your server software does
+      # not support the Java version that Geyser requires (26.3)" at every start
+      # since 2026-10-15 — Geyser auto-updates from PLUGINS below, so it moves
+      # ahead on its own and this line has to follow. Watch for that warning in
+      # the startup log: it is the signal to bump. 26.3 still runs on Java 25.
+      VERSION: "26.3"
 
       # P-2: fixed heap (equal min/max, no resize pauses) + Aikar's G1GC flags.
       # 1536M -> 1792M on 2026-08-19, with F-9 going 4 -> 6. Kept deliberately
